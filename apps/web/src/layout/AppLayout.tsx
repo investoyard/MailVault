@@ -1,6 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Avatar, Badge, Button, Dropdown, Layout, Menu, Tooltip, type MenuProps } from 'antd';
 import {
   AppstoreOutlined,
@@ -20,6 +20,7 @@ import {
   SettingOutlined,
   TeamOutlined,
   InboxOutlined,
+  ThunderboltOutlined,
 } from '@ant-design/icons';
 import type { Module } from '@mailvault/shared';
 import { useAuth } from '../auth';
@@ -94,6 +95,28 @@ export function AppLayout() {
 
   const status = useQuery({ queryKey: ['system-status'], queryFn: () => api.get<StatusResp>('/api/system/status'), refetchInterval: 30_000 });
   const notes = useQuery({ queryKey: ['notifications'], queryFn: () => api.get<NotificationRow[]>('/api/notifications'), refetchInterval: 30_000 });
+
+  // Live updates: the worker signals changes; refresh the affected screens (debounced).
+  const qc = useQueryClient();
+  const [live, setLive] = useState(false);
+  useEffect(() => {
+    const es = new EventSource('/api/events');
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    es.addEventListener('ready', () => setLive(true));
+    es.addEventListener('change', () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        for (const key of ['dashboard', 'history', 'historical-jobs', 'mailboxes', 'notifications', 'destinations', 'system-status']) {
+          void qc.invalidateQueries({ queryKey: [key] });
+        }
+      }, 800);
+    });
+    es.onerror = () => setLive(false);
+    return () => {
+      clearTimeout(timer);
+      es.close();
+    };
+  }, [qc]);
   const unread = notes.data?.filter((n) => !n.readAt).length ?? 0;
   const worker = status.data?.workers.find((w) => w.online) ?? status.data?.workers[0];
 
@@ -142,6 +165,11 @@ export function AppLayout() {
                   style={{ background: worker?.online ? '#16A34A' : '#DC2626' }}
                 />
                 {worker?.online ? 'Processing service running' : 'Processing service offline'}
+              </span>
+            </Tooltip>
+            <Tooltip title={live ? 'Screens update automatically when emails are processed' : 'Live updates paused; data refreshes every 30 seconds'}>
+              <span className="mv-pill" style={{ color: live ? '#4F46E5' : '#94A3B8' }}>
+                <ThunderboltOutlined /> {live ? 'Live' : 'Polling'}
               </span>
             </Tooltip>
           </div>

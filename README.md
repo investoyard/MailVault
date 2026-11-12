@@ -78,4 +78,18 @@ powershell -ExecutionPolicy Bypass -File scripts\setup-iis.ps1 -HostName mailvau
 | Rule editor (create/edit with versions, live save-path preview), Sync now, monitored folders, retry/manual download | Done |
 | Microsoft SSO for admin users, per-user (delegated) mailbox sign-in | **Waiting for the Entra app registration** |
 
+**Phase 2 – Admin experience:**
+
+| Item | Status |
+|---|---|
+| Mailbox search (Graph date-range search, paged) + fetch single message | Done |
+| Rule Testing: live search, per-rule ✔/✘ explanation, "already processed" flags, manual download of selected files | Done (needs M365 to show real results) |
+| "Test on the last 14 days" for an unsaved rule inside the rule editor | Done |
+| Historical jobs: Simulate / Execute, include-processed, saved checkpoints, cancel & resume, completion notification | Done, integration-tested |
+| History: Excel export (streamed), email details with live body, save a copy (path-guarded), bulk retry, status filter from links | Done |
+| Live updates (Postgres LISTEN/NOTIFY → server-sent events → screens refresh) | Done |
+| Low-disk-space alerts for destination folders | Done |
+| Per-mailbox dashboard filter | Not started |
+
 Integration tests: `npm run test:integration -w @mailvault/worker` (uses database `mailvault_test`).
+PDF of any doc: `npx tsx scripts/md-to-pdf.ts docs/ENTRA-SETUP.md`.

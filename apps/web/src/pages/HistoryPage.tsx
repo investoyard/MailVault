@@ -3,7 +3,9 @@ import { useSearchParams } from 'react-router-dom';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useQuery } from '@tanstack/react-query';
 import { App, Button, Card, DatePicker, Descriptions, Drawer, Input, Select, Space, Table, Tag, Tooltip, Typography } from 'antd';
-import { CopyOutlined, DownloadOutlined, FileExcelOutlined, ProfileOutlined, RedoOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons';
+import { CopyOutlined, DownloadOutlined, FileExcelOutlined, MailOutlined, ProfileOutlined, RedoOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons';
+import { EmailDetailsModal } from '../components/EmailDetailsModal';
+import { useAuth } from '../auth';
 import type { Dayjs } from 'dayjs';
 import { DOWNLOAD_STATUSES, DOWNLOAD_STATUS_LABELS, type DownloadStatus } from '@mailvault/shared';
 import { api, qs } from '../api';
@@ -78,11 +80,14 @@ export function HistoryPage() {
 
   const q = useQuery({
     queryKey: ['history', page, pageSize, filters],
-    queryFn: () =>
-      api.get<Resp>(
-        `/api/history${qs({
-          page,
-          pageSize,
+    queryFn: () => api.get<Resp>(`/api/history${filterQs(page, pageSize)}`),
+    placeholderData: (prev) => prev,
+  });
+
+  function filterQs(p?: number, ps?: number) {
+    return qs({
+          page: p,
+          pageSize: ps,
           status: filters.status,
           mailboxId: filters.mailboxId,
           ruleId: filters.ruleId,
@@ -91,9 +96,20 @@ export function HistoryPage() {
           fileName: filters.fileName,
           from: filters.range?.[0]?.startOf('day').toISOString(),
           to: filters.range?.[1]?.endOf('day').toISOString(),
-        })}`,
-      ),
-    placeholderData: (prev) => prev,
+    });
+  }
+
+  const { can } = useAuth();
+  const [picked, setPicked] = useState<string[]>([]);
+  const [emailFor, setEmailFor] = useState<string | null>(null);
+  const bulk = useMutation({
+    mutationFn: (ids: string[]) => api.post<{ retried: number; skipped: number }>('/api/history/retry-bulk', { ids }),
+    onSuccess: (r) => {
+      message.success(`${r.retried} download(s) queued again${r.skipped ? `, ${r.skipped} skipped (not failed or waiting)` : ''}.`);
+      setPicked([]);
+      setTimeout(() => void qc.invalidateQueries({ queryKey: ['history'] }), 3000);
+    },
+    onError: (e: Error) => message.error(e.message),
   });
 
   const apply = () => {
@@ -118,8 +134,13 @@ export function HistoryPage() {
             <Button icon={<ReloadOutlined />} onClick={() => q.refetch()} loading={q.isFetching}>
               Refresh
             </Button>
-            <Tooltip title="Excel export arrives in Phase 2">
-              <Button icon={<FileExcelOutlined />} disabled>
+            {picked.length > 0 && can('history', 'execute') && (
+              <Button icon={<RedoOutlined />} loading={bulk.isPending} onClick={() => bulk.mutate(picked)}>
+                Retry {picked.length} selected
+              </Button>
+            )}
+            <Tooltip title={`Exports all ${fmtNumber(q.data?.total)} records that match the current filters`}>
+              <Button icon={<FileExcelOutlined />} href={`/api/history/export${filterQs()}`} disabled={!q.data?.total}>
                 Export to Excel
               </Button>
             </Tooltip>
@@ -151,6 +172,15 @@ export function HistoryPage() {
           loading={q.isFetching}
           dataSource={q.data?.rows ?? []}
           onRow={(r) => ({ onClick: () => setSelected(r), style: { cursor: 'pointer' } })}
+          rowSelection={
+            can('history', 'execute')
+              ? {
+                  selectedRowKeys: picked,
+                  onChange: (k) => setPicked(k as string[]),
+                  getCheckboxProps: (r) => ({ disabled: !['FAILED', 'WAITING_DESTINATION', 'RETRYING'].includes(r.status) }),
+                }
+              : undefined
+          }
           scroll={{ x: 1100 }}
           locale={{ emptyText: <EmptyState title="No history found" description="Try a wider date range or clear the filters." /> }}
           pagination={{
@@ -254,7 +284,14 @@ export function HistoryPage() {
             </Descriptions>
 
             <Space wrap>
-              <Tooltip title="Download a copy to your computer arrives in Phase 2"><Button icon={<DownloadOutlined />} disabled>Save a copy</Button></Tooltip>
+              <Button icon={<MailOutlined />} onClick={() => setEmailFor(selected.id)}>
+                View email
+              </Button>
+              {selected.status === 'SUCCESS' && can('history', 'execute') && (
+                <Button icon={<DownloadOutlined />} href={`/api/history/${selected.id}/file`}>
+                  Save a copy
+                </Button>
+              )}
               {['FAILED', 'WAITING_DESTINATION', 'RETRYING'].includes(selected.status) && (
                 <Button type="primary" icon={<RedoOutlined />} loading={retry.isPending} onClick={() => retry.mutate(selected.id)}>
                   Retry now
@@ -274,6 +311,8 @@ export function HistoryPage() {
           </>
         )}
       </Drawer>
+
+      <EmailDetailsModal downloadId={emailFor} onClose={() => setEmailFor(null)} />
     </>
   );
 }

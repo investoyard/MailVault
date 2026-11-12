@@ -74,13 +74,31 @@ export class CursorExpiredError extends Error {
   }
 }
 
+export interface SearchQuery {
+  mailbox: string;
+  folderId: string;
+  receivedFrom: Date;
+  receivedTo: Date;
+  onlyWithAttachments?: boolean;
+  pageSize?: number;
+  /** Opaque cursor from a previous page (null/undefined = first page). */
+  pageCursor?: string | null;
+}
+
+export interface SearchPage {
+  messages: MailEnvelope[];
+  nextCursor: string | null;
+}
+
 export interface MailProvider {
   readonly type: ProviderType;
   testConnection(mailbox: string): Promise<ConnectionTestResult>;
   listFolders(mailbox: string): Promise<MailFolderInfo[]>;
   getChanges(opts: GetChangesOptions): Promise<ChangeBatch>;
+  /** Date-range search in one folder, newest first, paged. Used by Rule Testing and historical jobs. */
+  search(q: SearchQuery): Promise<SearchPage>;
+  getMessage(ref: MailRef): Promise<MailEnvelope>;
   getBodyText(ref: MailRef): Promise<string>;
   listAttachments(ref: MailRef): Promise<AttachmentInfo[]>;
   openAttachment(ref: MailRef, attachmentId: string): Promise<NodeJS.ReadableStream>;
-  // Phase 2: search(query) for Rule Testing and historical jobs
 }

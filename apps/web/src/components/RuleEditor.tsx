@@ -1,12 +1,13 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Alert, App, Button, Card, Col, DatePicker, Divider, Drawer, Form, Input, InputNumber, Radio, Row, Select, Space, Switch, Tag, Tooltip, Typography } from 'antd';
+import { Alert, App, Button, Card, Col, DatePicker, Divider, Drawer, Form, Input, InputNumber, Modal, Radio, Row, Select, Skeleton, Space, Switch, Tag, Tooltip, Typography } from 'antd';
 import { BulbOutlined, ExperimentOutlined, FolderOpenOutlined, InfoCircleOutlined } from '@ant-design/icons';
 import dayjs, { type Dayjs } from 'dayjs';
 import { buildDestinationFolder, renderPattern, sanitizeFileName, PATTERN_TOKENS } from '@mailvault/core';
 import type { DestinationStatus, RuleInput } from '@mailvault/shared';
 import { api } from '../api';
 import { DestinationStatusTag } from './ui';
+import { TestResults, type TestEmail } from './TestResults';
 
 interface Mailbox {
   id: string;
@@ -101,23 +102,44 @@ export function RuleEditor({ open, rule, onClose }: { open: boolean; rule: RuleR
     }
   }, [open, rule, form, mailboxes.data, destinations.data]);
 
+  const toInput = (v: FormValues): RuleInput => {
+    const { range, ...conditions } = v.conditions;
+    const clean = (s?: string) => (s && s.trim() ? s.trim() : undefined);
+    return {
+      ...v,
+      description: clean(v.description),
+      conditions: {
+        ...conditions,
+        subjectContains: clean(conditions.subjectContains),
+        subjectExact: clean(conditions.subjectExact),
+        bodyContains: clean(conditions.bodyContains),
+        receivedFrom: range?.[0]?.startOf('day').toISOString(),
+        receivedTo: range?.[1]?.endOf('day').toISOString(),
+      },
+      attachments: { ...v.attachments, nameContains: clean(v.attachments.nameContains) },
+    };
+  };
+
+  // "Test this rule": runs the unsaved rule against the last 14 days of real mail.
+  const [testOpen, setTestOpen] = useState(false);
+  const test = useMutation({
+    mutationFn: async () => {
+      const v = await form.validateFields();
+      setTestOpen(true);
+      return api.post<{ scanned: number; emails: TestEmail[] }>('/api/rule-testing/search', {
+        mailboxId: v.mailboxId,
+        from: dayjs().subtract(14, 'day').startOf('day').toISOString(),
+        to: dayjs().toISOString(),
+        limit: 50,
+        draftRule: toInput(v),
+      });
+    },
+  });
+  const draftMatches = (test.data?.emails ?? []).filter((e) => e.rules.find((r) => r.ruleId === 'draft')?.matched);
+
   const save = useMutation({
     mutationFn: (v: FormValues) => {
-      const { range, ...conditions } = v.conditions;
-      const clean = (s?: string) => (s && s.trim() ? s.trim() : undefined);
-      const body: RuleInput = {
-        ...v,
-        description: clean(v.description),
-        conditions: {
-          ...conditions,
-          subjectContains: clean(conditions.subjectContains),
-          subjectExact: clean(conditions.subjectExact),
-          bodyContains: clean(conditions.bodyContains),
-          receivedFrom: range?.[0]?.startOf('day').toISOString(),
-          receivedTo: range?.[1]?.endOf('day').toISOString(),
-        },
-        attachments: { ...v.attachments, nameContains: clean(v.attachments.nameContains) },
-      };
+      const body = toInput(v);
       return rule ? api.put(`/api/rules/${rule.id}`, body) : api.post('/api/rules', body);
     },
     onSuccess: () => {
@@ -428,6 +450,9 @@ export function RuleEditor({ open, rule, onClose }: { open: boolean; rule: RuleR
                 <Alert style={{ marginTop: 14 }} type="info" showIcon icon={<ExperimentOutlined />} message="Simulation mode: nothing is saved, History shows what would happen." />
               )}
               {values?.stopFurtherRules && <Alert style={{ marginTop: 10 }} type="warning" showIcon message="Lower-priority rules will skip emails this rule matches." />}
+              <Button block icon={<ExperimentOutlined />} style={{ marginTop: 14 }} loading={test.isPending} onClick={() => test.mutate()}>
+                Test on the last 14 days of email
+              </Button>
             </Card>
 
             <Card className="mv-card" size="small" style={{ marginTop: 16 }} title={<Space><FolderOpenOutlined style={{ color: '#D97706' }} />Example save location</Space>} styles={{ body: { padding: 18 } }}>
@@ -456,6 +481,30 @@ export function RuleEditor({ open, rule, onClose }: { open: boolean; rule: RuleR
           </div>
         </Col>
       </Row>
+      <Modal
+        open={testOpen}
+        onCancel={() => setTestOpen(false)}
+        footer={null}
+        width={900}
+        title={test.data ? `Test result: ${draftMatches.length} of ${test.data.emails.length} recent email(s) match` : 'Testing the rule…'}
+        destroyOnHidden
+      >
+        {test.isPending ? (
+          <Skeleton active paragraph={{ rows: 6 }} />
+        ) : test.isError ? (
+          <Alert type="error" showIcon message={(test.error as Error).message} />
+        ) : (
+          <>
+            <Alert
+              type="info"
+              showIcon
+              style={{ marginBottom: 12 }}
+              message="Emails from the last 14 days that this unsaved rule would pick up. Nothing is downloaded from this window."
+            />
+            <TestResults emails={draftMatches} mailboxId={values?.mailboxId ?? ''} canDownload={false} />
+          </>
+        )}
+      </Modal>
     </Drawer>
   );
 }

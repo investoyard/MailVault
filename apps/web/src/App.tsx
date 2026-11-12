@@ -13,7 +13,8 @@ import { LogsPage } from './pages/LogsPage';
 import { UsersPage } from './pages/UsersPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { SystemStatusPage } from './pages/SystemStatusPage';
-import { PlannedPage } from './pages/PlannedPage';
+import { RuleTestingPage } from './pages/RuleTestingPage';
+import { HistoricalJobsPage } from './pages/HistoricalJobsPage';
 
 export function App() {
   const { user, loading } = useAuth();
@@ -40,40 +41,8 @@ export function App() {
         <Route index element={<DashboardPage />} />
         <Route path="accounts" element={<AccountsPage />} />
         <Route path="rules" element={<RulesPage />} />
-        <Route
-          path="rule-testing"
-          element={
-            <PlannedPage
-              title="Rule Testing"
-              phase="Phase 2"
-              description="Try rules against real emails before they go live."
-              points={[
-                'Pick a mailbox, sender, subject keywords and a date range',
-                'Preview matching emails and their attachments',
-                'See which rules match each email, with a ✔/✘ for every condition',
-                'Download selected attachments manually',
-                'Run a rule against historical emails',
-              ]}
-            />
-          }
-        />
-        <Route
-          path="historical-jobs"
-          element={
-            <PlannedPage
-              title="Historical Jobs"
-              phase="Phase 2"
-              description="Process older emails on purpose, never by accident."
-              points={[
-                'Choose mailbox, folders, date range and rules',
-                'Simulate first ("would download X to Y") or execute',
-                'Optionally include emails that were already processed',
-                'Live progress, cancel and resume',
-                'Runs at lower priority so live sync is never delayed',
-              ]}
-            />
-          }
-        />
+        <Route path="rule-testing" element={<RuleTestingPage />} />
+        <Route path="historical-jobs" element={<HistoricalJobsPage />} />
         <Route path="history" element={<HistoryPage />} />
         <Route path="destinations" element={<DestinationsPage />} />
         <Route path="notifications" element={<NotificationsPage />} />

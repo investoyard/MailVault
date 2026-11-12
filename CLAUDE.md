@@ -47,6 +47,7 @@ npm run db:deploy | db:seed | db:seed-demo [-- --clear]
 npm run check:graph -- user@company.com      # M365 access check
 npm run check:share -- "\\server\share"      # write-access check
 npx tsx tests/e2e/screenshots.ts [outDir]    # screenshots of every page (needs api + web running)
+npx tsx scripts/md-to-pdf.ts <file.md> [out.pdf]  # styled PDF of a doc via Edge
 ```
 
 ## Business rules that code must keep
@@ -85,4 +86,5 @@ npx tsx tests/e2e/screenshots.ts [outDir]    # screenshots of every page (needs 
 
 - Phase 0 (foundation): done. Entra app registration + share service account pending with IT (docs/ENTRA-SETUP.md).
 - Phase 1 (core engine): engine, pipeline, rule editor done; SSO + delegated mailbox sign-in wait for the Entra app. See README "Phase status".
-- Next: Phase 2 (dashboard polish, history export, Rule Testing, historical jobs) — needs `MailProvider.search()`.
+- Phase 2 (admin experience): Rule Testing, historical jobs, history export/details/save-copy/bulk retry, live updates done; per-mailbox dashboard filter open.
+- Live updates: worker calls notifyChange() -> pg_notify('mailvault_events') -> API /api/events (SSE) -> web invalidates queries.

@@ -202,21 +202,167 @@ export async function resourceRoutes(app: FastifyInstance) {
     to: z.iso.datetime().optional(),
   });
 
+  const historyWhere = (q: z.infer<typeof historyQuery>): Prisma.AttachmentDownloadWhereInput => ({
+    status: q.status,
+    attachment: q.fileName ? { name: { contains: q.fileName, mode: 'insensitive' } } : undefined,
+    match: {
+      ruleId: q.ruleId,
+      message: {
+        mailboxId: q.mailboxId,
+        fromEmail: q.sender ? { contains: q.sender, mode: 'insensitive' } : undefined,
+        subject: q.subject ? { contains: q.subject, mode: 'insensitive' } : undefined,
+        receivedAt: q.from || q.to ? { gte: q.from ? new Date(q.from) : undefined, lte: q.to ? new Date(q.to) : undefined } : undefined,
+      },
+    },
+  });
+
+  app.post('/history/retry-bulk', { preHandler: requirePermission('history', 'execute') }, async (req) => {
+    const { ids } = z.object({ ids: z.array(z.string().min(1)).min(1).max(500) }).parse(req.body);
+    const { count } = await prisma.attachmentDownload.updateMany({
+      where: { id: { in: ids }, status: { in: ['FAILED', 'WAITING_DESTINATION', 'RETRYING'] } },
+      data: { status: 'PENDING', attempts: 0, nextAttemptAt: null, errorCode: null, errorMessage: null },
+    });
+    if (count) await (await getQueue()).send(QUEUES.processDownloads, {}, { singletonKey: 'all' });
+    await audit(req.user.id, 'DOWNLOAD_RETRY_BULK', 'AttachmentDownload', null, null, { requested: ids.length, retried: count }, req.ip);
+    return { ok: true, retried: count, skipped: ids.length - count };
+  });
+
+  // Excel export of the current filter (streamed, so large exports don't use much memory).
+  app.get('/history/export', { preHandler: requirePermission('history') }, async (req, reply) => {
+    const q = historyQuery.parse(req.query);
+    const where = historyWhere(q);
+    const ExcelJS = (await import('exceljs')).default;
+    const stamp = new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-');
+    reply.raw.writeHead(200, {
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': `attachment; filename="MailVault-history-${stamp}.xlsx"`,
+    });
+    const wb = new ExcelJS.stream.xlsx.WorkbookWriter({ stream: reply.raw, useStyles: true });
+    const ws = wb.addWorksheet('Download history', { views: [{ state: 'frozen', ySplit: 1 }] });
+    ws.columns = [
+      { header: 'Email account', key: 'mailbox', width: 28 },
+      { header: 'Sender', key: 'sender', width: 30 },
+      { header: 'Recipients', key: 'to', width: 30 },
+      { header: 'Subject', key: 'subject', width: 45 },
+      { header: 'Received', key: 'received', width: 19, style: { numFmt: 'dd-mmm-yyyy hh:mm' } },
+      { header: 'Attachment', key: 'file', width: 34 },
+      { header: 'Size (KB)', key: 'size', width: 11 },
+      { header: 'Rule', key: 'rule', width: 24 },
+      { header: 'Trigger', key: 'trigger', width: 12 },
+      { header: 'Destination path', key: 'path', width: 60 },
+      { header: 'Downloaded', key: 'downloaded', width: 19, style: { numFmt: 'dd-mmm-yyyy hh:mm' } },
+      { header: 'Status', key: 'status', width: 14 },
+      { header: 'Reason / error', key: 'note', width: 50 },
+    ];
+    ws.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    ws.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4F46E5' } };
+    ws.getRow(1).commit();
+
+    // Excel has no time zones: write wall-clock times in the business time zone.
+    const tz = process.env.BUSINESS_TIMEZONE ?? 'Asia/Kolkata';
+    const local = (d: Date | null) => {
+      if (!d) return null;
+      const p = Object.fromEntries(new Intl.DateTimeFormat('en-GB', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' }).formatToParts(d).map((x) => [x.type, x.value]));
+      return new Date(Date.UTC(+p.year!, +p.month! - 1, +p.day!, +p.hour!, +p.minute!, +p.second!));
+    };
+
+    let cursor: string | undefined;
+    let written = 0;
+    for (;;) {
+      const batch = await prisma.attachmentDownload.findMany({
+        where,
+        orderBy: { id: 'asc' },
+        take: 1000,
+        ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
+        include: { attachment: true, match: { include: { rule: { select: { name: true } }, message: { include: { mailbox: { select: { email: true } } } } } } },
+      });
+      for (const r of batch) {
+        ws.addRow({
+          mailbox: r.match.message.mailbox.email,
+          sender: r.match.message.fromEmail,
+          to: r.match.message.toEmails.join('; '),
+          subject: r.match.message.subject,
+          received: local(r.match.message.receivedAt),
+          file: r.finalFileName ?? r.attachment.name,
+          size: Math.round(r.attachment.sizeBytes / 102.4) / 10,
+          rule: r.match.rule.name,
+          trigger: r.match.trigger,
+          path: r.destinationPath ?? '',
+          downloaded: local(r.downloadedAt),
+          status: r.status,
+          note: r.errorMessage ?? r.skipReason ?? '',
+        }).commit();
+      }
+      written += batch.length;
+      if (batch.length < 1000 || written >= 200_000) break;
+      cursor = batch.at(-1)!.id;
+    }
+    ws.autoFilter = { from: 'A1', to: 'M1' };
+    await wb.commit();
+    await audit(req.user.id, 'HISTORY_EXPORTED', 'AttachmentDownload', null, null, { rows: written, filters: q }, req.ip);
+    return reply;
+  });
+
+  // Email details: stored metadata plus the live body text from the mailbox (bodies are never stored).
+  app.get('/history/:id/email', { preHandler: requirePermission('history') }, async (req) => {
+    const { id } = idParam.parse(req.params);
+    const d = await prisma.attachmentDownload.findUniqueOrThrow({
+      where: { id },
+      include: { match: { include: { message: { include: { mailbox: true, attachments: true, matches: { include: { rule: { select: { name: true } } } } } } } } },
+    });
+    const m = d.match.message;
+    let body: string | null = null;
+    let bodyError: string | null = null;
+    if (graphReady()) {
+      try {
+        body = (await new M365Provider(graphConfigFromEnv()).getBodyText({ mailbox: m.mailbox.email, messageId: m.providerMessageId })).slice(0, 20_000);
+      } catch (err) {
+        bodyError = err instanceof GraphError ? explainGraphError(err) : (err as Error).message;
+      }
+    } else {
+      bodyError = 'Microsoft 365 is not configured, so the email body cannot be shown.';
+    }
+    return {
+      subject: m.subject,
+      from: m.fromName ? `${m.fromName} <${m.fromEmail}>` : m.fromEmail,
+      to: m.toEmails,
+      cc: m.ccEmails,
+      receivedAt: m.receivedAt,
+      mailbox: m.mailbox.email,
+      internetMessageId: m.internetMessageId,
+      attachments: m.attachments.map((a) => ({ name: a.name, sizeBytes: a.sizeBytes, isInline: a.isInline, kind: a.kind })),
+      rulesApplied: m.matches.map((x) => ({ rule: x.rule.name, trigger: x.trigger, runNumber: x.runNumber, at: x.matchedAt })),
+      body,
+      bodyError,
+    };
+  });
+
+  // Save a copy of a downloaded file to the user's computer (only files MailVault wrote, inside their destination folder).
+  app.get('/history/:id/file', { preHandler: requirePermission('history', 'execute') }, async (req, reply) => {
+    const { id } = idParam.parse(req.params);
+    const d = await prisma.attachmentDownload.findUniqueOrThrow({ where: { id }, include: { match: { include: { rule: { include: { destination: true } } } } } });
+    if (d.status !== 'SUCCESS' || !d.destinationPath) return reply.code(400).send({ error: 'This file was not saved by MailVault' });
+    const { resolve: resolvePath, basename } = await import('node:path');
+    const { createReadStream } = await import('node:fs');
+    const { stat } = await import('node:fs/promises');
+    const base = resolvePath(d.match.rule.destination.basePath).toLowerCase() + '\\';
+    const full = resolvePath(d.destinationPath);
+    if (!full.toLowerCase().startsWith(base)) return reply.code(403).send({ error: 'File is outside its destination folder' });
+    try {
+      await stat(full);
+    } catch {
+      return reply.code(404).send({ error: 'The file is no longer in the destination folder (moved or deleted)' });
+    }
+    await audit(req.user.id, 'FILE_DOWNLOADED_BY_USER', 'AttachmentDownload', id, null, { path: full }, req.ip);
+    const name = basename(full);
+    reply.header('Content-Type', 'application/octet-stream');
+    reply.header('Content-Disposition', `attachment; filename="${name.replace(/["\\]/g, '_')}"; filename*=UTF-8''${encodeURIComponent(name)}`);
+    return reply.send(createReadStream(full));
+  });
+
   app.get('/history', { preHandler: requirePermission('history') }, async (req) => {
     const q = historyQuery.parse(req.query);
-    const where: Prisma.AttachmentDownloadWhereInput = {
-      status: q.status,
-      attachment: q.fileName ? { name: { contains: q.fileName, mode: 'insensitive' } } : undefined,
-      match: {
-        ruleId: q.ruleId,
-        message: {
-          mailboxId: q.mailboxId,
-          fromEmail: q.sender ? { contains: q.sender, mode: 'insensitive' } : undefined,
-          subject: q.subject ? { contains: q.subject, mode: 'insensitive' } : undefined,
-          receivedAt: q.from || q.to ? { gte: q.from ? new Date(q.from) : undefined, lte: q.to ? new Date(q.to) : undefined } : undefined,
-        },
-      },
-    };
+    const where = historyWhere(q);
     const [total, rows] = await Promise.all([
       prisma.attachmentDownload.count({ where }),
       prisma.attachmentDownload.findMany({

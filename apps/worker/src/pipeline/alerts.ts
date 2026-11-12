@@ -28,3 +28,8 @@ export async function plog(level: 'info' | 'warn' | 'error', source: string, mes
     .create({ data: { level, source, message, correlationId: extra.correlationId, mailboxId: extra.mailboxId, data: extra.data as never } })
     .catch(() => undefined);
 }
+
+/** Tells the API (Postgres LISTEN/NOTIFY) that data changed, so open dashboards refresh live. */
+export async function notifyChange(kind: string) {
+  await prisma.$executeRaw`SELECT pg_notify('mailvault_events', ${JSON.stringify({ kind, at: Date.now() })})`.catch(() => undefined);
+}

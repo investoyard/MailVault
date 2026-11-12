@@ -26,7 +26,21 @@ export async function runFolderHealth() {
     if (r.status === 'UNAVAILABLE' && d.status !== 'UNAVAILABLE') {
       log.warn({ destination: d.name, error: r.error }, 'destination unavailable');
       await raiseAlert({ key, type: 'DESTINATION_UNAVAILABLE', severity: 'ERROR', title: `Folder unavailable: ${d.name}`, message: `${d.basePath}: ${r.error}`, link: '/destinations' });
-    } else if (r.status !== 'UNAVAILABLE' && d.status === 'UNAVAILABLE') {
+    }
+    const spaceKey = `DESTINATION_SPACE:${d.id}`;
+    if (r.status === 'LOW_SPACE' && d.status !== 'LOW_SPACE') {
+      await raiseAlert({
+        key: spaceKey,
+        type: 'DESTINATION_LOW_SPACE',
+        severity: 'WARNING',
+        title: `Low disk space: ${d.name}`,
+        message: `${d.basePath} has ${r.freeMb} MB free (warning below ${d.lowSpaceThresholdMb} MB).`,
+        link: '/destinations',
+      });
+    } else if (r.status === 'HEALTHY' && d.status === 'LOW_SPACE') {
+      await resolveAlert(spaceKey, `Disk space OK again: ${d.name}`, d.basePath, '/destinations');
+    }
+    if (r.status !== 'UNAVAILABLE' && d.status === 'UNAVAILABLE') {
       log.info({ destination: d.name }, 'destination recovered');
       await resolveAlert(key, `Folder available again: ${d.name}`, d.basePath, '/destinations');
       await prisma.attachmentDownload.updateMany({

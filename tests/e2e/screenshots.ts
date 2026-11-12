@@ -27,6 +27,7 @@ const pages = [
   ['users', '/users'],
   ['settings', '/settings'],
   ['rule-testing', '/rule-testing'],
+  ['historical-jobs', '/historical-jobs'],
 ] as const;
 
 const browser = await chromium.launch({ channel: 'msedge', headless: true });
@@ -80,6 +81,20 @@ await page.getByRole('button', { name: 'More actions' }).first().click();
 await page.getByText('Monitored folders').click();
 await page.waitForTimeout(1000);
 await page.screenshot({ path: resolve(out, '23-accounts-folders.png') });
+
+// Historical job drawer
+await page.goto(base + '/historical-jobs');
+await page.waitForLoadState('networkidle');
+await page.getByRole('button', { name: 'New historical job' }).first().click();
+await page.waitForTimeout(800);
+await page.screenshot({ path: resolve(out, '24-historical-new.png') });
+
+// History: row selection for bulk retry + email details
+await page.goto(base + '/history?status=FAILED');
+await page.waitForLoadState('networkidle');
+await page.locator('.ant-table-row .ant-checkbox-input').first().check().catch(() => undefined);
+await page.waitForTimeout(400);
+await page.screenshot({ path: resolve(out, '25-history-bulk.png') });
 
 await browser.close();
 console.log(`Saved screenshots to ${out}`);

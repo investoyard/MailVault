@@ -44,11 +44,25 @@ export const QUEUES = {
   syncMailbox: 'sync-mailbox',
   processDownloads: 'process-downloads',
   folderHealth: 'folder-health',
+  historical: 'historical-job',
+  manualDownload: 'manual-download',
 } as const;
 
 export interface SyncJob {
   mailboxId: string;
   trigger?: ProcessTrigger;
+}
+
+export interface HistoricalJobMsg {
+  jobId: string;
+}
+
+export interface ManualDownloadJob {
+  mailboxId: string;
+  providerMessageId: string;
+  ruleId: string;
+  attachmentIds: string[];
+  userId: string;
 }
 
 /** Human labels for statuses, used by the admin UI. */

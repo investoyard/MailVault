@@ -12,6 +12,8 @@ import {
   type MailFolderInfo,
   type MailProvider,
   type MailRef,
+  type SearchPage,
+  type SearchQuery,
 } from '@mailvault/core';
 import { GraphClient, GraphError, type GraphConfig } from './graph-client.js';
 
@@ -148,6 +150,25 @@ export class M365Provider implements MailProvider {
       throw err;
     }
     return { messages, cursor };
+  }
+
+  async search(q: SearchQuery): Promise<SearchPage> {
+    const filter = [`receivedDateTime ge ${q.receivedFrom.toISOString()}`, `receivedDateTime le ${q.receivedTo.toISOString()}`];
+    if (q.onlyWithAttachments) filter.push('hasAttachments eq true');
+    const url =
+      q.pageCursor ??
+      `/users/${enc(q.mailbox)}/mailFolders/${enc(q.folderId)}/messages?$select=${MESSAGE_FIELDS}` +
+        `&$filter=${encodeURIComponent(filter.join(' and '))}&$orderby=receivedDateTime desc&$top=${q.pageSize ?? 50}`;
+    const page = await this.graph.json<{ value: GraphMessage[]; '@odata.nextLink'?: string }>(url);
+    return {
+      messages: page.value.filter((m) => m.receivedDateTime).map((m) => toEnvelope(m, q.folderId)),
+      nextCursor: page['@odata.nextLink'] ?? null,
+    };
+  }
+
+  async getMessage(ref: MailRef): Promise<MailEnvelope> {
+    const m = await this.graph.json<GraphMessage>(`/users/${enc(ref.mailbox)}/messages/${enc(ref.messageId)}?$select=${MESSAGE_FIELDS}`);
+    return toEnvelope(m, m.parentFolderId ?? '');
   }
 
   async getBodyText(ref: MailRef): Promise<string> {

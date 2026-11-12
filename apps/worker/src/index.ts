@@ -7,11 +7,13 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { PgBoss } from 'pg-boss';
 import { prisma } from '@mailvault/db';
-import { QUEUES, type SyncJob } from '@mailvault/shared';
+import { QUEUES, type HistoricalJobMsg, type ManualDownloadJob, type SyncJob } from '@mailvault/shared';
 import { runFolderHealth } from './jobs/folder-health.js';
 import { defaultContext as ctx, graphConfigured } from './pipeline/context.js';
 import { dueMailboxes, syncMailbox } from './pipeline/sync.js';
 import { processDownloads, recoverStuckDownloads } from './pipeline/download.js';
+import { runHistoricalJob, runManualDownload } from './pipeline/historical.js';
+import { notifyChange } from './pipeline/alerts.js';
 
 const version = (JSON.parse(readFileSync(resolve(ROOT, 'package.json'), 'utf8')) as { version: string }).version;
 const instanceId = `${hostname()}-${process.pid}-${randomUUID().slice(0, 8)}`;
@@ -47,6 +49,8 @@ async function main() {
   await boss.createQueue(QUEUES.processDownloads, { policy: 'stately' });
   await boss.createQueue(QUEUES.syncScheduler);
   await boss.createQueue(QUEUES.folderHealth);
+  await boss.createQueue(QUEUES.historical);
+  await boss.createQueue(QUEUES.manualDownload);
 
   await boss.schedule(QUEUES.syncScheduler, '* * * * *', {}, { tz: env.timeZone });
   await boss.schedule(QUEUES.folderHealth, '*/5 * * * *', {}, { tz: env.timeZone });
@@ -66,15 +70,32 @@ async function main() {
   await boss.work<SyncJob>(QUEUES.syncMailbox, { localConcurrency: 4 }, async ([job]) => {
     if (!job) return;
     const r = await syncMailbox(job.data.mailboxId, job.data.trigger ?? 'AUTO', ctx);
+    await notifyChange('sync');
     if (r.matched > 0 || job.data.trigger !== 'AUTO') await boss.send(QUEUES.processDownloads, {}, { singletonKey: 'all' });
   });
 
   await boss.work(QUEUES.processDownloads, async () => {
     const n = await processDownloads(ctx);
-    if (n) log.info({ processed: n }, 'downloads processed');
+    if (n) {
+      log.info({ processed: n }, 'downloads processed');
+      await notifyChange('downloads');
+    }
   });
 
   await boss.work(QUEUES.folderHealth, async () => runFolderHealth());
+
+  // Historical jobs: one at a time, so a large backfill never crowds out live sync.
+  await boss.work<HistoricalJobMsg>(QUEUES.historical, { localConcurrency: 1 }, async ([job]) => {
+    if (!job) return;
+    await runHistoricalJob(job.data.jobId, ctx).finally(() => notifyChange('historical'));
+    await boss.send(QUEUES.processDownloads, {}, { singletonKey: 'all' });
+  });
+
+  await boss.work<ManualDownloadJob>(QUEUES.manualDownload, async ([job]) => {
+    if (!job) return;
+    await runManualDownload(job.data, ctx);
+    await boss.send(QUEUES.processDownloads, {}, { singletonKey: 'all' });
+  });
   await runFolderHealth();
 
   await prisma.processingLog.create({

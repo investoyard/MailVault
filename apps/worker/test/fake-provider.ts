@@ -8,6 +8,8 @@ import {
   type MailFolderInfo,
   type MailProvider,
   type MailRef,
+  type SearchPage,
+  type SearchQuery,
 } from '@mailvault/core';
 import { GraphError } from '@mailvault/m365';
 
@@ -60,6 +62,23 @@ export class FakeProvider implements MailProvider {
       (m) => m.folderId === o.folderId && (this.added.get(m.providerMessageId) ?? 0) > since && (o.cursor || m.receivedAt >= o.receivedAfter),
     );
     return { messages, cursor: `seq:${this.seq}` };
+  }
+
+  calls2 = { search: 0 };
+
+  async search(q: SearchQuery): Promise<SearchPage> {
+    this.calls2.search++;
+    const all = this.messages
+      .filter((m) => m.folderId === q.folderId && m.receivedAt >= q.receivedFrom && m.receivedAt <= q.receivedTo && (!q.onlyWithAttachments || m.hasAttachments))
+      .sort((a, b) => b.receivedAt.getTime() - a.receivedAt.getTime());
+    const size = q.pageSize ?? 50;
+    const start = q.pageCursor ? Number(q.pageCursor) : 0;
+    const messages = all.slice(start, start + size);
+    return { messages, nextCursor: start + size < all.length ? String(start + size) : null };
+  }
+
+  async getMessage(ref: MailRef) {
+    return this.find(ref.messageId);
   }
 
   async getBodyText(ref: MailRef) {
