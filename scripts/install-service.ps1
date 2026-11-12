@@ -40,6 +40,22 @@ if ($Uninstall) {
 $npm = (Get-Command npm.cmd -ErrorAction Stop).Source
 New-Item -ItemType Directory -Force (Join-Path $root "logs") | Out-Null
 
+# Stop development copies of MailVault (npm run dev:api / dev:worker / dev:web) so they don't hold
+# port 3200 or process mail twice. Only processes whose command line points at this MailVault folder.
+$escaped = [regex]::Escape($root)
+$dev = Get-CimInstance Win32_Process -Filter "Name='node.exe'" |
+  Where-Object { $_.CommandLine -match $escaped -or $_.CommandLine -match 'MailVault[\\/](apps|node_modules)' } |
+  Where-Object { $_.CommandLine -match 'tsx|vite|server\.ts|src[\\/]index\.ts' }
+foreach ($p in $dev) {
+  Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue
+}
+if ($dev) { Write-Host "Stopped $(@($dev).Count) development MailVault process(es)."; Start-Sleep -Seconds 2 }
+$busy = Get-NetTCPConnection -State Listen -LocalPort $port -ErrorAction SilentlyContinue | Select-Object -First 1
+if ($busy) {
+  $owner = Get-CimInstance Win32_Process -Filter "ProcessId=$($busy.OwningProcess)"
+  throw "Port $port is still in use by: $($owner.CommandLine). Free it or change PORT in .env (and in iis\web.config)."
+}
+
 Push-Location $root
 Write-Host "Applying database updates..."
 & $npm run db:deploy

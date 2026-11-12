@@ -104,10 +104,18 @@ await app.register(integrationRoutes, { prefix: '/api' });
 // Production: serve the built React app and fall back to index.html for client routes.
 const webDist = resolve(ROOT, 'apps/web/dist');
 if (existsSync(webDist)) {
-  await app.register(fastifyStatic, { root: webDist, wildcard: false });
+  // wildcard: serve whatever is in dist now, so a rebuild never needs an API restart to find new asset files.
+  await app.register(fastifyStatic, {
+    root: webDist,
+    wildcard: true,
+    // Hashed files under /assets never change → cache for a year; index.html must always be fresh.
+    setHeaders: (res, path) => {
+      res.header('Cache-Control', /[\\/]assets[\\/]/.test(path) ? 'public, max-age=31536000, immutable' : 'no-cache');
+    },
+  });
   app.setNotFoundHandler((req, reply) => {
     if (req.url.startsWith('/api/')) return reply.code(404).send({ error: 'Not found' });
-    return reply.sendFile('index.html');
+    return reply.header('Cache-Control', 'no-cache').sendFile('index.html');
   });
 }
 
