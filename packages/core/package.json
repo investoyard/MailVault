@@ -7,7 +7,7 @@
   "types": "src/index.ts",
   "exports": {
     ".": "./src/index.ts",
-    "./node": "./src/node/folder-check.ts"
+    "./node": "./src/node/index.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p .",

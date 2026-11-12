@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { App, Alert, Button, Card, DatePicker, Descriptions, Drawer, Form, Input, InputNumber, Modal, Radio, Space, Switch, Table, Tag, Tooltip } from 'antd';
-import { ApiOutlined, CheckCircleFilled, CloseCircleFilled, MailOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons';
+import { App, Alert, Button, Card, DatePicker, Descriptions, Drawer, Dropdown, Form, Input, InputNumber, Modal, Radio, Space, Switch, Table, Tag, Tooltip } from 'antd';
+import { ApiOutlined, CheckCircleFilled, CloseCircleFilled, FolderOutlined, MailOutlined, MoreOutlined, PlusOutlined, ReloadOutlined, SyncOutlined } from '@ant-design/icons';
+import { FoldersModal } from '../components/FoldersModal';
 import dayjs, { type Dayjs } from 'dayjs';
 import type { MailboxAuthMode, MailboxStatus } from '@mailvault/shared';
 import { api } from '../api';
@@ -61,6 +62,17 @@ export function AccountsPage() {
     onSuccess: (_d, v) => {
       message.success(v.enabled ? 'Monitoring enabled' : 'Monitoring paused');
       void qc.invalidateQueries({ queryKey: ['mailboxes'] });
+    },
+    onError: (e: Error) => message.error(e.message),
+  });
+
+  const [foldersFor, setFoldersFor] = useState<Mailbox | null>(null);
+
+  const sync = useMutation({
+    mutationFn: (id: string) => api.post<{ message: string }>(`/api/mailboxes/${id}/sync`),
+    onSuccess: (r) => {
+      message.success(r.message);
+      setTimeout(() => void qc.invalidateQueries({ queryKey: ['mailboxes'] }), 4000);
     },
     onError: (e: Error) => message.error(e.message),
   });
@@ -133,7 +145,7 @@ export function AccountsPage() {
               responsive: ['lg'],
               render: (a: MailboxAuthMode) => <Tag>{a === 'APP_ONLY' ? 'App-only' : 'User sign-in'}</Tag>,
             },
-            { title: 'Folders', responsive: ['xl'], render: (_, m) => m.folders.map((f) => f.displayName).join(', ') || '—' },
+            { title: 'Folders', responsive: ['xxl'], render: (_, m) => m.folders.map((f) => f.displayName).join(', ') || '—' },
             { title: 'Rules', align: 'right', render: (_, m) => fmtNumber(m._count.rules) },
             {
               title: 'Last sync',
@@ -157,12 +169,27 @@ export function AccountsPage() {
             {
               title: '',
               align: 'right',
-              render: (_, m) =>
-                can('accounts', 'execute') && (
-                  <Button icon={<ApiOutlined />} loading={testing === m.id} onClick={() => runTest(m)}>
-                    Test connection
-                  </Button>
-                ),
+              render: (_, m) => (
+                <Space size={8}>
+                  {can('accounts', 'execute') && (
+                    <Button icon={<SyncOutlined />} loading={sync.isPending && sync.variables === m.id} disabled={!m.enabled} onClick={() => sync.mutate(m.id)}>
+                      Sync now
+                    </Button>
+                  )}
+                  <Dropdown
+                    trigger={['click']}
+                    menu={{
+                      items: [
+                        { key: 'test', icon: <ApiOutlined />, label: 'Test connection', disabled: !can('accounts', 'execute') },
+                        { key: 'folders', icon: <FolderOutlined />, label: 'Monitored folders' },
+                      ],
+                      onClick: (e) => (e.key === 'test' ? void runTest(m) : setFoldersFor(m)),
+                    }}
+                  >
+                    <Button icon={<MoreOutlined />} loading={testing === m.id} aria-label="More actions" />
+                  </Dropdown>
+                </Space>
+              ),
             },
           ]}
         />
@@ -221,6 +248,8 @@ export function AccountsPage() {
           </Form.Item>
         </Form>
       </Drawer>
+
+      <FoldersModal mailbox={foldersFor} canEdit={can('accounts', 'edit')} onClose={() => setFoldersFor(null)} />
 
       <Modal open={!!testResult} onCancel={() => setTestResult(null)} footer={<Button type="primary" onClick={() => setTestResult(null)}>Close</Button>} title="Connection test">
         {testResult && (

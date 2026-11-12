@@ -3,6 +3,7 @@ import { constants as fsc } from 'node:fs';
 import { access, mkdir, rm, statfs, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { assertRootExists } from './fs-root.js';
 
 export interface FolderCheckResult {
   status: 'HEALTHY' | 'LOW_SPACE' | 'UNAVAILABLE';
@@ -13,6 +14,7 @@ export interface FolderCheckResult {
 /** Exists → create if allowed → write and delete a test file → free space. */
 export async function checkFolder(basePath: string, createIfMissing: boolean, lowSpaceMb: number): Promise<FolderCheckResult> {
   try {
+    await assertRootExists(basePath);
     try {
       await access(basePath, fsc.F_OK);
     } catch {
@@ -37,6 +39,8 @@ export function explainFsError(e: NodeJS.ErrnoException): string {
       return 'No write permission for the account running MailVault';
     case 'ENOENT':
       return 'Path not found or network share unreachable';
+    case 'ETIMEDOUT':
+      return 'Network share did not respond in time';
     case 'ENOSPC':
       return 'Destination disk is full';
     case 'EBUSY':

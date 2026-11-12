@@ -1,0 +1,31 @@
+// UI smoke test: creates a rule through the rule editor (needs api + web running). Remove the rule afterwards.
+import { readFileSync } from 'node:fs';
+import { chromium } from 'playwright-core';
+
+const pw = /DEV_ADMIN_PASSWORD=(.*)/.exec(readFileSync('.env', 'utf8'))![1]!.trim();
+const browser = await chromium.launch({ channel: 'msedge', headless: true });
+const page = await browser.newPage({ viewport: { width: 1536, height: 960 } });
+await page.goto('http://localhost:5180');
+await page.fill('#username', 'admin');
+await page.fill('#password', pw);
+await page.click('button[type=submit]');
+await page.waitForSelector('text=Dashboard');
+await page.goto('http://localhost:5180/rules');
+await page.getByRole('button', { name: 'New rule' }).click();
+await page.waitForSelector('text=Example save location');
+await page.getByLabel('Rule name').fill('UI created rule');
+const sender = page.getByLabel('From (sender)');
+await sender.click();
+await sender.pressSequentially('*@ui-vendor.com');
+await sender.press('Enter');
+await page.getByLabel('Subject contains').fill('Statement');
+await page.waitForTimeout(400);
+const preview = await page.locator('.mv-mono').filter({ hasText: 'ui-vendor.com' }).first().textContent();
+console.log('preview:', preview);
+await page.getByRole('button', { name: 'Create rule' }).click();
+const toast = await page.waitForSelector('.ant-message-notice', { timeout: 10000 });
+console.log('toast:', await toast.textContent());
+await page.waitForTimeout(800);
+console.log('row visible:', await page.getByText('UI created rule').isVisible());
+await page.screenshot({ path: process.argv[2] ?? 'logs/ui-create-rule.png' });
+await browser.close();

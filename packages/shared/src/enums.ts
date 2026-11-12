@@ -38,6 +38,19 @@ export type ProcessTrigger = (typeof PROCESS_TRIGGERS)[number];
 export const ALERT_SEVERITIES = ['INFO', 'SUCCESS', 'WARNING', 'ERROR'] as const;
 export type AlertSeverity = (typeof ALERT_SEVERITIES)[number];
 
+/** pg-boss queue names shared by the API (sends jobs) and the worker (runs them). */
+export const QUEUES = {
+  syncScheduler: 'sync-scheduler',
+  syncMailbox: 'sync-mailbox',
+  processDownloads: 'process-downloads',
+  folderHealth: 'folder-health',
+} as const;
+
+export interface SyncJob {
+  mailboxId: string;
+  trigger?: ProcessTrigger;
+}
+
 /** Human labels for statuses, used by the admin UI. */
 export const DOWNLOAD_STATUS_LABELS: Record<DownloadStatus, string> = {
   PENDING: 'Pending',

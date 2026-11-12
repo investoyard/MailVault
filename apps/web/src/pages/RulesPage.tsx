@@ -1,11 +1,12 @@
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { App, Button, Card, Input, Select, Space, Switch, Table, Tag, Tooltip, Typography } from 'antd';
-import { ExperimentOutlined, PlusOutlined, SearchOutlined, StopOutlined } from '@ant-design/icons';
+import { EditOutlined, ExperimentOutlined, PlusOutlined, SearchOutlined, StopOutlined } from '@ant-design/icons';
 import type { DestinationStatus } from '@mailvault/shared';
 import { api } from '../api';
 import { useAuth } from '../auth';
 import { DestinationStatusTag, EmptyState, PageHeader } from '../components/ui';
+import { RuleEditor, type RuleRecord } from '../components/RuleEditor';
 import { fmtNumber } from '../format';
 
 interface Rule {
@@ -42,6 +43,14 @@ export function RulesPage() {
   const qc = useQueryClient();
   const [search, setSearch] = useState('');
   const [mailbox, setMailbox] = useState<string | undefined>();
+  const [editor, setEditor] = useState<{ open: boolean; rule: RuleRecord | null }>({ open: false, rule: null });
+  const openEdit = async (id: string) => {
+    try {
+      setEditor({ open: true, rule: await api.get<RuleRecord>(`/api/rules/${id}`) });
+    } catch (e) {
+      message.error((e as Error).message);
+    }
+  };
 
   const q = useQuery({ queryKey: ['rules'], queryFn: () => api.get<Rule[]>('/api/rules') });
 
@@ -66,11 +75,9 @@ export function RulesPage() {
         subtitle="Rules decide which emails are picked up and where their attachments are saved. Lower priority numbers run first."
         extra={
           can('rules', 'create') && (
-            <Tooltip title="The full rule editor (conditions, attachment filters, destination, test) arrives in Phase 1.">
-              <Button type="primary" icon={<PlusOutlined />} disabled>
-                New rule
-              </Button>
-            </Tooltip>
+            <Button type="primary" icon={<PlusOutlined />} onClick={() => setEditor({ open: true, rule: null })}>
+              New rule
+            </Button>
           )
         }
       />
@@ -133,9 +140,21 @@ export function RulesPage() {
                 <Switch checked={r.enabled} disabled={!can('rules', 'edit')} loading={toggle.isPending && toggle.variables?.id === r.id} onChange={(enabled) => toggle.mutate({ id: r.id, enabled })} />
               ),
             },
+            {
+              title: '',
+              align: 'right',
+              render: (_, r) =>
+                can('rules', 'edit') && (
+                  <Button icon={<EditOutlined />} onClick={() => void openEdit(r.id)}>
+                    Edit
+                  </Button>
+                ),
+            },
           ]}
         />
       </Card>
+
+      <RuleEditor open={editor.open} rule={editor.rule} onClose={() => setEditor({ open: false, rule: null })} />
     </>
   );
 }

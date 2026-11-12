@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useQuery } from '@tanstack/react-query';
 import { App, Button, Card, DatePicker, Descriptions, Drawer, Input, Select, Space, Table, Tag, Tooltip, Typography } from 'antd';
 import { CopyOutlined, DownloadOutlined, FileExcelOutlined, ProfileOutlined, RedoOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons';
@@ -55,8 +57,20 @@ export function HistoryPage() {
   const { message } = App.useApp();
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
-  const [filters, setFilters] = useState<Filters>({});
-  const [draft, setDraft] = useState<Filters>({});
+  const [params] = useSearchParams();
+  const initial: Filters = { status: (params.get('status') as DownloadStatus | null) ?? undefined };
+  const [filters, setFilters] = useState<Filters>(initial);
+  const [draft, setDraft] = useState<Filters>(initial);
+  const qc = useQueryClient();
+  const retry = useMutation({
+    mutationFn: (id: string) => api.post(`/api/history/${id}/retry`),
+    onSuccess: () => {
+      message.success('Queued. The file will be downloaded in a moment.');
+      setSelected(null);
+      setTimeout(() => void qc.invalidateQueries({ queryKey: ['history'] }), 3000);
+    },
+    onError: (e: Error) => message.error(e.message),
+  });
   const [selected, setSelected] = useState<Row | null>(null);
 
   const mailboxes = useQuery({ queryKey: ['mailboxes'], queryFn: () => api.get<{ id: string; email: string }[]>('/api/mailboxes') });
@@ -240,8 +254,17 @@ export function HistoryPage() {
             </Descriptions>
 
             <Space wrap>
-              <Tooltip title="Phase 2"><Button icon={<DownloadOutlined />} disabled>Download file</Button></Tooltip>
-              <Tooltip title="Phase 2"><Button icon={<RedoOutlined />} disabled={selected.status !== 'FAILED'}>Retry</Button></Tooltip>
+              <Tooltip title="Download a copy to your computer arrives in Phase 2"><Button icon={<DownloadOutlined />} disabled>Save a copy</Button></Tooltip>
+              {['FAILED', 'WAITING_DESTINATION', 'RETRYING'].includes(selected.status) && (
+                <Button type="primary" icon={<RedoOutlined />} loading={retry.isPending} onClick={() => retry.mutate(selected.id)}>
+                  Retry now
+                </Button>
+              )}
+              {selected.status === 'AWAITING_MANUAL' && (
+                <Button type="primary" icon={<DownloadOutlined />} loading={retry.isPending} onClick={() => retry.mutate(selected.id)}>
+                  Download to folder
+                </Button>
+              )}
               <Tooltip title={`Trace ID ${selected.match.correlationId}`}>
                 <Button icon={<ProfileOutlined />} href={`/logs?correlationId=${selected.match.correlationId}`}>
                   Processing logs

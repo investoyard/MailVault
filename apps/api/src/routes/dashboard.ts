@@ -49,7 +49,7 @@ export async function dashboardRoutes(app: FastifyInstance) {
         COALESCE(SUM(CASE WHEN a.status = 'SKIPPED' THEN 1 END), 0)::int AS skipped
       FROM d
       LEFT JOIN "AttachmentDownload" a
-        ON to_char(a."updatedAt" AT TIME ZONE ${tz}, 'YYYY-MM-DD') = d.day
+        ON to_char((a."updatedAt" AT TIME ZONE 'UTC') AT TIME ZONE ${tz}, 'YYYY-MM-DD') = d.day
       GROUP BY d.day ORDER BY d.day`;
 
     const ruleStats = await prisma.$queryRaw<

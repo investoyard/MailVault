@@ -1,5 +1,5 @@
-// MailVault Worker: runs in the background as a Windows service (see scripts/install-service.ps1).
-// Phase 0: heartbeat + job queue + folder health checks. Phase 1 adds mailbox sync, rule matching and downloads.
+// MailVault Worker: runs in the background (see scripts/install-service.ps1).
+// Jobs: sync scheduler → sync-mailbox (delta + rule matching) → process-downloads, plus folder health.
 import { ROOT, env, log } from './env.js';
 import { hostname } from 'node:os';
 import { randomUUID } from 'node:crypto';
@@ -7,7 +7,11 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { PgBoss } from 'pg-boss';
 import { prisma } from '@mailvault/db';
+import { QUEUES, type SyncJob } from '@mailvault/shared';
 import { runFolderHealth } from './jobs/folder-health.js';
+import { defaultContext as ctx, graphConfigured } from './pipeline/context.js';
+import { dueMailboxes, syncMailbox } from './pipeline/sync.js';
+import { processDownloads, recoverStuckDownloads } from './pipeline/download.js';
 
 const version = (JSON.parse(readFileSync(resolve(ROOT, 'package.json'), 'utf8')) as { version: string }).version;
 const instanceId = `${hostname()}-${process.pid}-${randomUUID().slice(0, 8)}`;
@@ -26,22 +30,52 @@ async function heartbeat() {
 const boss = new PgBoss({ connectionString: env.databaseUrl.replace(/\?.*$/, ''), schema: 'pgboss' });
 boss.on('error', (err) => log.error({ err }, 'job queue error'));
 
-const QUEUES = { folderHealth: 'folder-health' } as const;
+let warnedNotConfigured = false;
 
 async function main() {
   log.info({ instanceId, version }, 'MailVault worker starting');
   await prisma.$connect();
 
-  // Remove heartbeats of old instances of this host so the dashboard shows one row per running worker.
   await prisma.serviceHeartbeat.deleteMany({ where: { service: 'worker', hostname: hostname(), lastBeatAt: { lt: new Date(Date.now() - 10 * 60_000) } } });
   await heartbeat();
   const beat = setInterval(() => heartbeat().catch((err) => log.error({ err }, 'heartbeat failed')), env.heartbeatSeconds * 1000);
+  await recoverStuckDownloads();
 
   await boss.start();
+  // "stately": at most one queued + one running job per key, so a mailbox is never synced twice at once.
+  await boss.createQueue(QUEUES.syncMailbox, { policy: 'stately' });
+  await boss.createQueue(QUEUES.processDownloads, { policy: 'stately' });
+  await boss.createQueue(QUEUES.syncScheduler);
   await boss.createQueue(QUEUES.folderHealth);
+
+  await boss.schedule(QUEUES.syncScheduler, '* * * * *', {}, { tz: env.timeZone });
   await boss.schedule(QUEUES.folderHealth, '*/5 * * * *', {}, { tz: env.timeZone });
+
+  await boss.work(QUEUES.syncScheduler, async () => {
+    if (!graphConfigured()) {
+      if (!warnedNotConfigured) log.warn('Microsoft 365 is not configured yet: automatic mailbox sync is paused');
+      warnedNotConfigured = true;
+    } else {
+      for (const mailboxId of await dueMailboxes(ctx)) {
+        await boss.send(QUEUES.syncMailbox, { mailboxId, trigger: 'AUTO' } satisfies SyncJob, { singletonKey: mailboxId });
+      }
+    }
+    await boss.send(QUEUES.processDownloads, {}, { singletonKey: 'all' }); // retries that became due
+  });
+
+  await boss.work<SyncJob>(QUEUES.syncMailbox, { localConcurrency: 4 }, async ([job]) => {
+    if (!job) return;
+    const r = await syncMailbox(job.data.mailboxId, job.data.trigger ?? 'AUTO', ctx);
+    if (r.matched > 0 || job.data.trigger !== 'AUTO') await boss.send(QUEUES.processDownloads, {}, { singletonKey: 'all' });
+  });
+
+  await boss.work(QUEUES.processDownloads, async () => {
+    const n = await processDownloads(ctx);
+    if (n) log.info({ processed: n }, 'downloads processed');
+  });
+
   await boss.work(QUEUES.folderHealth, async () => runFolderHealth());
-  await runFolderHealth(); // once at start-up
+  await runFolderHealth();
 
   await prisma.processingLog.create({
     data: { level: 'info', source: 'system', message: `Worker started on ${hostname()} (v${version})`, data: { instanceId } },

@@ -45,10 +45,42 @@ export interface MailRef {
   messageId: string;
 }
 
+export interface MailFolderInfo {
+  id: string;
+  displayName: string;
+  path: string; // e.g. "Inbox/Vendors"
+  totalItemCount?: number;
+}
+
+export interface ChangeBatch {
+  messages: MailEnvelope[];
+  /** Opaque cursor to store; pass back next time to get only newer changes. */
+  cursor: string;
+}
+
+export interface GetChangesOptions {
+  mailbox: string;
+  folderId: string;
+  cursor?: string | null;
+  /** Used only for the first sync (no cursor): ignore mail received before this. */
+  receivedAfter: Date;
+}
+
+/** Thrown by getChanges when the stored cursor is no longer valid; caller resets it and syncs again. */
+export class CursorExpiredError extends Error {
+  constructor() {
+    super('Sync position expired; a fresh sync is needed');
+    this.name = 'CursorExpiredError';
+  }
+}
+
 export interface MailProvider {
   readonly type: ProviderType;
   testConnection(mailbox: string): Promise<ConnectionTestResult>;
+  listFolders(mailbox: string): Promise<MailFolderInfo[]>;
+  getChanges(opts: GetChangesOptions): Promise<ChangeBatch>;
+  getBodyText(ref: MailRef): Promise<string>;
   listAttachments(ref: MailRef): Promise<AttachmentInfo[]>;
   openAttachment(ref: MailRef, attachmentId: string): Promise<NodeJS.ReadableStream>;
-  // Phase 1: getChanges(cursor), search(query), getBodyText(ref)
+  // Phase 2: search(query) for Rule Testing and historical jobs
 }

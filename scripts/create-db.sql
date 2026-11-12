@@ -12,6 +12,10 @@ SELECT 'CREATE DATABASE mailvault OWNER mailvault ENCODING ''UTF8'''
 WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = 'mailvault')
 \gexec
 
+-- Prisma stores UTC "timestamp without time zone"; the shared server defaults to Asia/Calcutta,
+-- so pin this database's sessions to UTC to keep now()/comparisons correct.
+ALTER DATABASE mailvault SET timezone TO 'UTC';
+
 \connect mailvault
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
 GRANT ALL ON SCHEMA public TO mailvault;

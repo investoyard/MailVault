@@ -8,7 +8,8 @@
     "start": "tsx src/index.ts",
     "typecheck": "tsc --noEmit -p .",
     "check:graph": "tsx src/checks/graph.ts",
-    "check:share": "tsx src/checks/share.ts"
+    "check:share": "tsx src/checks/share.ts",
+    "test:integration": "vitest run --config vitest.integration.config.ts"
   },
   "dependencies": {
     "@mailvault/core": "0.1.0",

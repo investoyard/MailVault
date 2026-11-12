@@ -62,16 +62,20 @@ powershell -ExecutionPolicy Bypass -File scripts\install-service.ps1 -WorkerAcco
 powershell -ExecutionPolicy Bypass -File scripts\setup-iis.ps1 -HostName mailvault.company.local -CertThumbprint <thumb>
 ```
 
-## Phase 0 status
+## Phase status
+
+**Phase 0 – Foundation:** done (Entra app registration + share service account pending with IT, see docs/ENTRA-SETUP.md).
+
+**Phase 1 – Core engine:**
 
 | Item | Status |
 |---|---|
-| Monorepo, TypeScript, shared packages | Done |
-| PostgreSQL `mailvault` database + schema v1 (all modules) | Done |
-| API: login, dashboard, accounts, folders, rules, history, logs, users, settings, system status | Done |
-| Worker: heartbeat, pg-boss queue, folder health checks with alerts | Done |
-| Admin panel (all screens; Phase 2 screens shown as planned) | Done |
-| `check:graph` / `check:share` commands | Done |
-| Service + IIS install scripts | Done (not yet run) |
-| Entra ID app, certificate, Exchange RBAC scope | **Needs M365 admin** (docs/ENTRA-SETUP.md) |
-| Domain service account with share rights | **Needs IT** |
+| Rule engine (sender/recipient/CC/subject/keywords/body/date, exclude wins, match explanation) | Done, unit-tested |
+| Attachment filter (types, names, sizes, inline, blocked, cloud links, encrypted, .eml for attached mails) | Done, unit-tested |
+| Safe file writer (temp file + SHA-256 + atomic move; Skip/Replace/Rename/Smart duplicates) | Done, unit-tested |
+| Microsoft Graph delta sync per folder, body text, folder list, streamed attachments | Done (not yet run against a real tenant) |
+| Worker pipeline: scheduler → sync → rule matching → downloads, retries with backoff, wait-for-folder, alerts | Done, integration-tested with a fake mailbox |
+| Rule editor (create/edit with versions, live save-path preview), Sync now, monitored folders, retry/manual download | Done |
+| Microsoft SSO for admin users, per-user (delegated) mailbox sign-in | **Waiting for the Entra app registration** |
+
+Integration tests: `npm run test:integration -w @mailvault/worker` (uses database `mailvault_test`).

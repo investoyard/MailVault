@@ -2,9 +2,12 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { checkFolder } from '@mailvault/core/node';
 import { prisma, type Prisma } from '@mailvault/db';
-import { destinationInputSchema, mailboxInputSchema, DOWNLOAD_STATUSES } from '@mailvault/shared';
-import { M365Provider, graphConfigFromEnv } from '@mailvault/m365';
+import { destinationInputSchema, mailboxInputSchema, DOWNLOAD_STATUSES, QUEUES, type SyncJob } from '@mailvault/shared';
+import { M365Provider, explainGraphError, graphConfigFromEnv, GraphError } from '@mailvault/m365';
 import { requirePermission } from '../auth.js';
+import { getQueue } from '../queue.js';
+
+const graphReady = () => Boolean(process.env.M365_TENANT_ID?.trim() && process.env.M365_CLIENT_ID?.trim());
 
 const idParam = z.object({ id: z.string().min(1) });
 
@@ -73,6 +76,45 @@ export async function resourceRoutes(app: FastifyInstance) {
     return result;
   });
 
+  app.post('/mailboxes/:id/sync', { preHandler: requirePermission('accounts', 'execute') }, async (req, reply) => {
+    const { id } = idParam.parse(req.params);
+    const mb = await prisma.mailbox.findUniqueOrThrow({ where: { id } });
+    if (!mb.enabled) return reply.code(400).send({ error: 'Monitoring is paused for this mailbox. Enable it first.' });
+    if (!graphReady()) return reply.code(400).send({ error: 'Microsoft 365 is not configured yet (see docs/ENTRA-SETUP.md).' });
+    const boss = await getQueue();
+    await boss.send(QUEUES.syncMailbox, { mailboxId: id, trigger: 'MANUAL_SYNC' } satisfies SyncJob, { singletonKey: id });
+    await audit(req.user.id, 'MAILBOX_SYNC_REQUESTED', 'Mailbox', id, null, null, req.ip);
+    return { ok: true, message: `Sync started for ${mb.email}. New emails will appear in a few moments.` };
+  });
+
+  app.get('/mailboxes/:id/folders', { preHandler: requirePermission('accounts') }, async (req, reply) => {
+    const { id } = idParam.parse(req.params);
+    const mb = await prisma.mailbox.findUniqueOrThrow({ where: { id }, include: { folders: true } });
+    const monitored = mb.folders.map((f) => ({ id: f.providerFolderId, displayName: f.displayName, lastSyncAt: f.lastSyncAt }));
+    if (!graphReady()) return { available: null, monitored, error: 'Microsoft 365 is not configured yet, so folders cannot be listed.' };
+    try {
+      const available = await new M365Provider(graphConfigFromEnv()).listFolders(mb.email);
+      return { available, monitored, error: null };
+    } catch (err) {
+      return reply.code(200).send({ available: null, monitored, error: err instanceof GraphError ? explainGraphError(err) : (err as Error).message });
+    }
+  });
+
+  app.put('/mailboxes/:id/folders', { preHandler: requirePermission('accounts', 'edit') }, async (req) => {
+    const { id } = idParam.parse(req.params);
+    const { folders } = z.object({ folders: z.array(z.object({ id: z.string().min(1), displayName: z.string().min(1) })).min(1) }).parse(req.body);
+    const existing = await prisma.mailboxFolder.findMany({ where: { mailboxId: id } });
+    const keep = new Set(folders.map((f) => f.id));
+    await prisma.$transaction([
+      prisma.mailboxFolder.deleteMany({ where: { mailboxId: id, providerFolderId: { notIn: [...keep] } } }),
+      ...folders
+        .filter((f) => !existing.some((e) => e.providerFolderId === f.id))
+        .map((f) => prisma.mailboxFolder.create({ data: { mailboxId: id, providerFolderId: f.id, displayName: f.displayName } })),
+    ]);
+    await audit(req.user.id, 'MAILBOX_FOLDERS_UPDATED', 'Mailbox', id, existing.map((e) => e.displayName), folders.map((f) => f.displayName), req.ip);
+    return { ok: true };
+  });
+
   // ─────────── Destinations ───────────
   app.get('/destinations', { preHandler: requirePermission('destinations') }, async () =>
     prisma.destination.findMany({ orderBy: { name: 'asc' }, include: { _count: { select: { rules: true } } } }),
@@ -128,6 +170,22 @@ export async function resourceRoutes(app: FastifyInstance) {
     const rule = await prisma.rule.update({ where: { id }, data: { enabled } });
     await audit(req.user.id, enabled ? 'RULE_ENABLED' : 'RULE_DISABLED', 'Rule', id, null, { enabled }, req.ip);
     return rule;
+  });
+
+  // ─────────── Retry / manual download ───────────
+  app.post('/history/:id/retry', { preHandler: requirePermission('history', 'execute') }, async (req, reply) => {
+    const { id } = idParam.parse(req.params);
+    const d = await prisma.attachmentDownload.findUniqueOrThrow({ where: { id } });
+    if (!['FAILED', 'WAITING_DESTINATION', 'RETRYING', 'AWAITING_MANUAL'].includes(d.status)) {
+      return reply.code(400).send({ error: 'Only failed, waiting or manual downloads can be retried' });
+    }
+    await prisma.attachmentDownload.update({
+      where: { id },
+      data: { status: 'PENDING', attempts: 0, nextAttemptAt: null, errorCode: null, errorMessage: null },
+    });
+    await (await getQueue()).send(QUEUES.processDownloads, {}, { singletonKey: 'all' });
+    await audit(req.user.id, d.status === 'AWAITING_MANUAL' ? 'DOWNLOAD_MANUAL' : 'DOWNLOAD_RETRY', 'AttachmentDownload', id, { status: d.status }, { status: 'PENDING' }, req.ip);
+    return { ok: true };
   });
 
   // ─────────── History ───────────

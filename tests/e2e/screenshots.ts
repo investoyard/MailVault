@@ -59,6 +59,28 @@ await page.locator('.ant-table-row').first().click();
 await page.waitForTimeout(600);
 await page.screenshot({ path: resolve(out, '20-history-drawer.png') });
 
+// Rule editor (edit an existing rule, then a new one)
+await page.goto(base + '/rules');
+await page.waitForLoadState('networkidle');
+await page.getByRole('button', { name: 'Edit' }).first().click();
+await page.waitForSelector('text=Example save location');
+await page.waitForTimeout(800);
+await page.screenshot({ path: resolve(out, '21-rule-editor-edit.png') });
+await page.keyboard.press('Escape');
+await page.waitForTimeout(400);
+await page.getByRole('button', { name: 'New rule' }).click();
+await page.waitForSelector('text=Example save location');
+await page.waitForTimeout(800);
+await page.screenshot({ path: resolve(out, '22-rule-editor-new.png'), fullPage: false });
+
+// Accounts: more-actions menu + folders dialog
+await page.goto(base + '/accounts');
+await page.waitForLoadState('networkidle');
+await page.getByRole('button', { name: 'More actions' }).first().click();
+await page.getByText('Monitored folders').click();
+await page.waitForTimeout(1000);
+await page.screenshot({ path: resolve(out, '23-accounts-folders.png') });
+
 await browser.close();
 console.log(`Saved screenshots to ${out}`);
 if (errors.length) {
