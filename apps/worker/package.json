@@ -1,0 +1,22 @@
+{
+  "name": "@mailvault/worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit -p .",
+    "check:graph": "tsx src/checks/graph.ts",
+    "check:share": "tsx src/checks/share.ts"
+  },
+  "dependencies": {
+    "@mailvault/core": "0.1.0",
+    "@mailvault/db": "0.1.0",
+    "@mailvault/m365": "0.1.0",
+    "@mailvault/shared": "0.1.0",
+    "dotenv": "^17.2.0",
+    "pg-boss": "^12.0.0",
+    "pino": "^9.9.0"
+  }
+}

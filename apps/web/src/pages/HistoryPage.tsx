@@ -1,0 +1,256 @@
+import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { App, Button, Card, DatePicker, Descriptions, Drawer, Input, Select, Space, Table, Tag, Tooltip, Typography } from 'antd';
+import { CopyOutlined, DownloadOutlined, FileExcelOutlined, ProfileOutlined, RedoOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons';
+import type { Dayjs } from 'dayjs';
+import { DOWNLOAD_STATUSES, DOWNLOAD_STATUS_LABELS, type DownloadStatus } from '@mailvault/shared';
+import { api, qs } from '../api';
+import { DownloadStatusTag, EmptyState, PageHeader } from '../components/ui';
+import { fmtBytes, fmtDateTime, fmtNumber } from '../format';
+
+interface Row {
+  id: string;
+  status: DownloadStatus;
+  destinationPath: string | null;
+  finalFileName: string | null;
+  attempts: number;
+  errorMessage: string | null;
+  skipReason: string | null;
+  downloadedAt: string | null;
+  createdAt: string;
+  sha256: string | null;
+  attachment: { name: string; sizeBytes: number; contentType: string | null };
+  match: {
+    correlationId: string;
+    trigger: string;
+    rule: { id: string; name: string };
+    message: {
+      fromEmail: string;
+      fromName: string | null;
+      toEmails: string[];
+      ccEmails: string[];
+      subject: string;
+      receivedAt: string;
+      mailbox: { id: string; email: string };
+    };
+  };
+}
+
+interface Resp {
+  total: number;
+  rows: Row[];
+}
+
+interface Filters {
+  status?: DownloadStatus;
+  mailboxId?: string;
+  ruleId?: string;
+  sender?: string;
+  subject?: string;
+  fileName?: string;
+  range?: [Dayjs, Dayjs] | null;
+}
+
+export function HistoryPage() {
+  const { message } = App.useApp();
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const [filters, setFilters] = useState<Filters>({});
+  const [draft, setDraft] = useState<Filters>({});
+  const [selected, setSelected] = useState<Row | null>(null);
+
+  const mailboxes = useQuery({ queryKey: ['mailboxes'], queryFn: () => api.get<{ id: string; email: string }[]>('/api/mailboxes') });
+  const rules = useQuery({ queryKey: ['rules'], queryFn: () => api.get<{ id: string; name: string }[]>('/api/rules') });
+
+  const q = useQuery({
+    queryKey: ['history', page, pageSize, filters],
+    queryFn: () =>
+      api.get<Resp>(
+        `/api/history${qs({
+          page,
+          pageSize,
+          status: filters.status,
+          mailboxId: filters.mailboxId,
+          ruleId: filters.ruleId,
+          sender: filters.sender,
+          subject: filters.subject,
+          fileName: filters.fileName,
+          from: filters.range?.[0]?.startOf('day').toISOString(),
+          to: filters.range?.[1]?.endOf('day').toISOString(),
+        })}`,
+      ),
+    placeholderData: (prev) => prev,
+  });
+
+  const apply = () => {
+    setPage(1);
+    setFilters(draft);
+  };
+
+  const copy = (text: string) => {
+    void navigator.clipboard.writeText(text);
+    message.success('Path copied. Paste it into File Explorer to open the folder.');
+  };
+
+  const folderOf = (p: string) => p.slice(0, p.lastIndexOf('\\'));
+
+  return (
+    <>
+      <PageHeader
+        title="Download History"
+        subtitle="Every processed email and attachment, with its rule, destination and outcome."
+        extra={
+          <>
+            <Button icon={<ReloadOutlined />} onClick={() => q.refetch()} loading={q.isFetching}>
+              Refresh
+            </Button>
+            <Tooltip title="Excel export arrives in Phase 2">
+              <Button icon={<FileExcelOutlined />} disabled>
+                Export to Excel
+              </Button>
+            </Tooltip>
+          </>
+        }
+      />
+
+      <Card className="mv-card" style={{ marginBottom: 16 }} styles={{ body: { paddingBottom: 4 } }}>
+        <div className="mv-filter-bar">
+          <DatePicker.RangePicker value={draft.range ?? null} onChange={(v) => setDraft({ ...draft, range: v as [Dayjs, Dayjs] | null })} placeholder={['Received from', 'Received to']} />
+          <Select allowClear placeholder="All mailboxes" style={{ width: 220 }} value={draft.mailboxId} onChange={(v) => setDraft({ ...draft, mailboxId: v })} options={(mailboxes.data ?? []).map((m) => ({ value: m.id, label: m.email }))} />
+          <Select allowClear placeholder="All rules" style={{ width: 200 }} value={draft.ruleId} onChange={(v) => setDraft({ ...draft, ruleId: v })} options={(rules.data ?? []).map((r) => ({ value: r.id, label: r.name }))} />
+          <Select allowClear placeholder="Any status" style={{ width: 190 }} value={draft.status} onChange={(v) => setDraft({ ...draft, status: v })} options={DOWNLOAD_STATUSES.map((s) => ({ value: s, label: DOWNLOAD_STATUS_LABELS[s] }))} />
+          <Input allowClear placeholder="Sender" style={{ width: 190 }} value={draft.sender} onChange={(e) => setDraft({ ...draft, sender: e.target.value })} onPressEnter={apply} />
+          <Input allowClear placeholder="Subject" style={{ width: 190 }} value={draft.subject} onChange={(e) => setDraft({ ...draft, subject: e.target.value })} onPressEnter={apply} />
+          <Input allowClear placeholder="File name" style={{ width: 170 }} value={draft.fileName} onChange={(e) => setDraft({ ...draft, fileName: e.target.value })} onPressEnter={apply} />
+          <Space>
+            <Button type="primary" icon={<SearchOutlined />} onClick={apply}>
+              Apply
+            </Button>
+            <Button onClick={() => { setDraft({}); setFilters({}); setPage(1); }}>Reset</Button>
+          </Space>
+        </div>
+      </Card>
+
+      <Card className="mv-card" styles={{ body: { padding: 0 } }}>
+        <Table
+          rowKey="id"
+          loading={q.isFetching}
+          dataSource={q.data?.rows ?? []}
+          onRow={(r) => ({ onClick: () => setSelected(r), style: { cursor: 'pointer' } })}
+          scroll={{ x: 1100 }}
+          locale={{ emptyText: <EmptyState title="No history found" description="Try a wider date range or clear the filters." /> }}
+          pagination={{
+            current: page,
+            pageSize,
+            total: q.data?.total ?? 0,
+            showSizeChanger: true,
+            showTotal: (t) => `${fmtNumber(t)} records`,
+            onChange: (p, s) => {
+              setPage(p);
+              setPageSize(s);
+            },
+          }}
+          columns={[
+            {
+              title: 'Attachment',
+              fixed: 'left',
+              width: 260,
+              render: (_, r) => (
+                <div>
+                  <Typography.Text strong ellipsis style={{ display: 'block', maxWidth: 240 }}>
+                    {r.finalFileName ?? r.attachment.name}
+                  </Typography.Text>
+                  <span className="mv-muted" style={{ fontSize: 12.5 }}>{fmtBytes(r.attachment.sizeBytes)}</span>
+                </div>
+              ),
+            },
+            {
+              title: 'Email',
+              width: 300,
+              render: (_, r) => (
+                <div>
+                  <Typography.Text ellipsis style={{ display: 'block', maxWidth: 280 }}>{r.match.message.subject}</Typography.Text>
+                  <span className="mv-muted" style={{ fontSize: 12.5 }}>{r.match.message.fromEmail}</span>
+                </div>
+              ),
+            },
+            { title: 'Received', width: 160, render: (_, r) => fmtDateTime(r.match.message.receivedAt) },
+            { title: 'Rule', width: 170, render: (_, r) => r.match.rule.name },
+            { title: 'Mailbox', width: 200, render: (_, r) => <span className="mv-muted">{r.match.message.mailbox.email}</span> },
+            {
+              title: 'Status',
+              width: 170,
+              render: (_, r) => {
+                const note = r.errorMessage ?? r.skipReason;
+                return note ? <Tooltip title={note}><span><DownloadStatusTag status={r.status} /></span></Tooltip> : <DownloadStatusTag status={r.status} />;
+              },
+            },
+            { title: 'Downloaded', width: 160, render: (_, r) => fmtDateTime(r.downloadedAt) },
+          ]}
+        />
+      </Card>
+
+      <Drawer
+        open={!!selected}
+        onClose={() => setSelected(null)}
+        width={620}
+        title={selected?.finalFileName ?? selected?.attachment.name}
+        extra={selected && <DownloadStatusTag status={selected.status} />}
+      >
+        {selected && (
+          <>
+            {(selected.errorMessage || selected.skipReason) && (
+              <Card size="small" style={{ marginBottom: 16, background: selected.status === 'FAILED' ? '#FEF2F2' : '#F8FAFC', borderColor: 'transparent' }}>
+                <b>{selected.status === 'FAILED' ? 'Error' : 'Reason'}:</b> {selected.errorMessage ?? selected.skipReason}
+              </Card>
+            )}
+
+            <Typography.Title level={5}>Email</Typography.Title>
+            <Descriptions column={1} size="small" bordered style={{ marginBottom: 20 }} styles={{ label: { width: 150 } }}>
+              <Descriptions.Item label="Subject">{selected.match.message.subject}</Descriptions.Item>
+              <Descriptions.Item label="From">{selected.match.message.fromName ? `${selected.match.message.fromName} <${selected.match.message.fromEmail}>` : selected.match.message.fromEmail}</Descriptions.Item>
+              <Descriptions.Item label="To">{selected.match.message.toEmails.join(', ') || '—'}</Descriptions.Item>
+              {selected.match.message.ccEmails.length > 0 && <Descriptions.Item label="CC">{selected.match.message.ccEmails.join(', ')}</Descriptions.Item>}
+              <Descriptions.Item label="Received">{fmtDateTime(selected.match.message.receivedAt)}</Descriptions.Item>
+              <Descriptions.Item label="Mailbox">{selected.match.message.mailbox.email}</Descriptions.Item>
+            </Descriptions>
+
+            <Typography.Title level={5}>Attachment</Typography.Title>
+            <Descriptions column={1} size="small" bordered style={{ marginBottom: 20 }} styles={{ label: { width: 150 } }}>
+              <Descriptions.Item label="Original name">{selected.attachment.name}</Descriptions.Item>
+              <Descriptions.Item label="Saved as">{selected.finalFileName ?? '—'}</Descriptions.Item>
+              <Descriptions.Item label="Size">{fmtBytes(selected.attachment.sizeBytes)}</Descriptions.Item>
+              <Descriptions.Item label="Type">{selected.attachment.contentType ?? '—'}</Descriptions.Item>
+              <Descriptions.Item label="Rule">{selected.match.rule.name} <Tag style={{ marginLeft: 6 }}>{selected.match.trigger}</Tag></Descriptions.Item>
+              <Descriptions.Item label="Attempts">{selected.attempts}</Descriptions.Item>
+              <Descriptions.Item label="Downloaded">{fmtDateTime(selected.downloadedAt)}</Descriptions.Item>
+              <Descriptions.Item label="Destination">
+                {selected.destinationPath ? (
+                  <Space direction="vertical" size={4}>
+                    <span className="mv-mono">{selected.destinationPath}</span>
+                    <Button size="small" icon={<CopyOutlined />} onClick={() => copy(folderOf(selected.destinationPath!))}>
+                      Copy folder path
+                    </Button>
+                  </Space>
+                ) : (
+                  '—'
+                )}
+              </Descriptions.Item>
+              {selected.sha256 && <Descriptions.Item label="SHA-256"><span className="mv-mono" style={{ wordBreak: 'break-all' }}>{selected.sha256}</span></Descriptions.Item>}
+            </Descriptions>
+
+            <Space wrap>
+              <Tooltip title="Phase 2"><Button icon={<DownloadOutlined />} disabled>Download file</Button></Tooltip>
+              <Tooltip title="Phase 2"><Button icon={<RedoOutlined />} disabled={selected.status !== 'FAILED'}>Retry</Button></Tooltip>
+              <Tooltip title={`Trace ID ${selected.match.correlationId}`}>
+                <Button icon={<ProfileOutlined />} href={`/logs?correlationId=${selected.match.correlationId}`}>
+                  Processing logs
+                </Button>
+              </Tooltip>
+            </Space>
+          </>
+        )}
+      </Drawer>
+    </>
+  );
+}

@@ -1,0 +1,45 @@
+{
+  "name": "mailvault",
+  "version": "0.1.0",
+  "private": true,
+  "description": "MailVault - Microsoft 365 email attachment automation",
+  "type": "module",
+  "workspaces": [
+    "packages/shared",
+    "packages/core",
+    "packages/db",
+    "packages/m365",
+    "apps/api",
+    "apps/worker",
+    "apps/web"
+  ],
+  "scripts": {
+    "dev:api": "npm run dev -w @mailvault/api",
+    "dev:worker": "npm run dev -w @mailvault/worker",
+    "dev:web": "npm run dev -w @mailvault/web",
+    "build:web": "npm run build -w @mailvault/web",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "db:generate": "npm run generate -w @mailvault/db",
+    "db:migrate": "npm run migrate -w @mailvault/db",
+    "db:deploy": "npm run deploy -w @mailvault/db",
+    "db:seed": "npm run seed -w @mailvault/db",
+    "check:graph": "npm run check:graph -w @mailvault/worker --",
+    "check:share": "npm run check:share -w @mailvault/worker --",
+    "gen-keys": "tsx scripts/gen-keys.ts",
+    "create-admin": "npm run create-admin -w @mailvault/api --",
+    "db:seed-demo": "npm run seed-demo -w @mailvault/db --",
+    "start:api": "npm run start -w @mailvault/api",
+    "start:worker": "npm run start -w @mailvault/worker"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "playwright-core": "^1.65.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0",
+    "vitest": "^3.2.0"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}

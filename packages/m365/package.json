@@ -1,0 +1,16 @@
+{
+  "name": "@mailvault/m365",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "dependencies": {
+    "@azure/identity": "^4.13.0",
+    "@mailvault/core": "0.1.0"
+  }
+}

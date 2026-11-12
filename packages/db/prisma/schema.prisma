@@ -1,0 +1,445 @@
+// MailVault database schema v1 (PostgreSQL)
+// Business rules enforced here:
+//  - One match per (message, rule) -> each email processed once per rule (BR #1)
+//  - Rule versions are snapshotted -> edits apply to future mail only, full traceability (BR #7, #9)
+//  - Only metadata is stored, never email bodies
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ───────────────────────── Users & access ─────────────────────────
+
+enum Role {
+  SUPER_ADMIN
+  ADMIN
+  OPERATOR
+  VIEWER
+}
+
+model User {
+  id            String    @id @default(cuid())
+  username      String    @unique
+  email         String?   @unique
+  displayName   String
+  passwordHash  String?   // null for SSO-only users
+  entraObjectId String?   @unique
+  role          Role      @default(VIEWER)
+  permissions   Json?     // optional overrides of the role template
+  isActive      Boolean   @default(true)
+  lastLoginAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  mailboxAccess UserMailboxAccess[]
+  auditLogs     AuditLog[]
+  notifications NotificationRecipient[]
+}
+
+model UserMailboxAccess {
+  userId    String
+  mailboxId String
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  mailbox   Mailbox @relation(fields: [mailboxId], references: [id], onDelete: Cascade)
+
+  @@id([userId, mailboxId])
+}
+
+// ───────────────────────── Mail accounts ─────────────────────────
+
+enum MailProviderType {
+  M365
+  GMAIL
+}
+
+enum MailboxAuthMode {
+  APP_ONLY
+  DELEGATED
+}
+
+enum MailboxStatus {
+  PENDING_SETUP
+  CONNECTED
+  SYNCING
+  WARNING
+  REAUTH_REQUIRED
+  DISCONNECTED
+  DISABLED
+}
+
+model Mailbox {
+  id                  String           @id @default(cuid())
+  provider            MailProviderType @default(M365)
+  email               String           @unique
+  displayName         String?
+  authMode            MailboxAuthMode  @default(APP_ONLY)
+  status              MailboxStatus    @default(PENDING_SETUP)
+  enabled             Boolean          @default(true)
+  syncIntervalMinutes Int?             // null = use global setting
+  monitoringStartAt   DateTime         @default(now()) // older mail only via historical jobs
+  encryptedToken      String?          // delegated refresh token cache (AES-256-GCM)
+  tokenExpiresAt      DateTime?
+  lastSyncAt          DateTime?
+  lastSuccessAt       DateTime?
+  lastError           String?
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+
+  folders        MailboxFolder[]
+  rules          Rule[]
+  messages       Message[]
+  syncRuns       SyncRun[]
+  historicalJobs HistoricalJob[]
+  userAccess     UserMailboxAccess[]
+}
+
+model MailboxFolder {
+  id                String    @id @default(cuid())
+  mailboxId         String
+  providerFolderId  String
+  displayName       String
+  includeSubfolders Boolean   @default(false)
+  deltaLink         String?   // sync position, saved in the same transaction as new messages
+  lastSyncAt        DateTime?
+  mailbox           Mailbox   @relation(fields: [mailboxId], references: [id], onDelete: Cascade)
+
+  @@unique([mailboxId, providerFolderId])
+}
+
+// ───────────────────────── Destinations ─────────────────────────
+
+enum DestinationStatus {
+  UNKNOWN
+  HEALTHY
+  LOW_SPACE
+  UNAVAILABLE
+}
+
+model Destination {
+  id                  String            @id @default(cuid())
+  name                String            @unique
+  basePath            String
+  createIfMissing     Boolean           @default(true)
+  lowSpaceThresholdMb Int               @default(1024)
+  status              DestinationStatus @default(UNKNOWN)
+  freeSpaceMb         BigInt?
+  lastCheckedAt       DateTime?
+  lastError           String?
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+
+  rules Rule[]
+}
+
+// ───────────────────────── Rules ─────────────────────────
+
+enum DuplicatePolicy {
+  SKIP
+  REPLACE
+  RENAME
+  SMART
+}
+
+model Rule {
+  id               String          @id @default(cuid())
+  name             String
+  description      String?
+  mailboxId        String
+  enabled          Boolean         @default(true)
+  priority         Int             @default(100)
+  stopFurtherRules Boolean         @default(false)
+  simulationMode   Boolean         @default(false)
+  conditions       Json            // RuleConditions (packages/shared)
+  attachments      Json            // AttachmentFilter
+  destinationId    String
+  download         Json            // DownloadConfig
+  duplicatePolicy  DuplicatePolicy @default(SMART)
+  autoDownload     Boolean         @default(true)
+  currentVersion   Int             @default(1)
+  effectiveFrom    DateTime        @default(now())
+  createdById      String?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  mailbox     Mailbox        @relation(fields: [mailboxId], references: [id])
+  destination Destination    @relation(fields: [destinationId], references: [id])
+  versions    RuleVersion[]
+  matches     MessageRuleMatch[]
+
+  @@unique([mailboxId, name])
+  @@index([mailboxId, enabled, priority])
+}
+
+model RuleVersion {
+  id          String   @id @default(cuid())
+  ruleId      String
+  version     Int
+  snapshot    Json     // full rule at that version
+  changedById String?
+  createdAt   DateTime @default(now())
+  rule        Rule     @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+
+  @@unique([ruleId, version])
+}
+
+// ───────────────────────── Processing ─────────────────────────
+
+model Message {
+  id                String   @id @default(cuid())
+  mailboxId         String
+  providerMessageId String   // immutable ID
+  internetMessageId String?
+  folderId          String?
+  fromEmail         String
+  fromName          String?
+  toEmails          String[]
+  ccEmails          String[]
+  subject           String
+  receivedAt        DateTime
+  hasAttachments    Boolean
+  evaluatedAt       DateTime?
+  firstSeenAt       DateTime @default(now())
+  mailbox           Mailbox  @relation(fields: [mailboxId], references: [id], onDelete: Cascade)
+
+  attachments Attachment[]
+  matches     MessageRuleMatch[]
+
+  @@unique([mailboxId, providerMessageId])
+  @@index([receivedAt])
+  @@index([fromEmail])
+}
+
+enum ProcessTrigger {
+  AUTO
+  MANUAL_SYNC
+  HISTORICAL
+  RULE_TEST
+  REPROCESS
+  RETRY
+}
+
+model MessageRuleMatch {
+  id            String         @id @default(cuid())
+  messageId     String
+  ruleId        String
+  ruleVersion   Int
+  trigger       ProcessTrigger @default(AUTO)
+  runNumber     Int            @default(1) // >1 only for explicit reprocessing
+  triggeredById String?
+  correlationId String         @default(uuid())
+  matchedAt     DateTime       @default(now())
+  message       Message        @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  rule          Rule           @relation(fields: [ruleId], references: [id])
+
+  downloads AttachmentDownload[]
+
+  @@unique([messageId, ruleId, runNumber])
+  @@index([ruleId, matchedAt])
+}
+
+enum AttachmentKind {
+  FILE
+  ITEM
+  REFERENCE
+  UNKNOWN
+}
+
+model Attachment {
+  id                   String         @id @default(cuid())
+  messageId            String
+  providerAttachmentId String
+  name                 String
+  contentType          String?
+  sizeBytes            Int
+  isInline             Boolean        @default(false)
+  kind                 AttachmentKind @default(FILE)
+  sha256               String?
+  message              Message        @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  downloads AttachmentDownload[]
+
+  @@unique([messageId, providerAttachmentId])
+}
+
+enum DownloadStatus {
+  PENDING
+  IN_PROGRESS
+  SUCCESS
+  FAILED
+  SKIPPED
+  RETRYING
+  WAITING_DESTINATION
+  AWAITING_MANUAL
+}
+
+model AttachmentDownload {
+  id              String         @id @default(cuid())
+  matchId         String
+  attachmentId    String
+  status          DownloadStatus @default(PENDING)
+  skipReason      String?
+  destinationPath String?        // final full path written
+  finalFileName   String?
+  attempts        Int            @default(0)
+  nextAttemptAt   DateTime?
+  errorCode       String?
+  errorMessage    String?
+  sha256          String?
+  bytesWritten    BigInt?
+  downloadedAt    DateTime?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  match           MessageRuleMatch @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  attachment      Attachment       @relation(fields: [attachmentId], references: [id], onDelete: Cascade)
+
+  @@unique([matchId, attachmentId])
+  @@index([status, nextAttemptAt])
+  @@index([createdAt])
+}
+
+model SyncRun {
+  id              String         @id @default(cuid())
+  mailboxId       String
+  trigger         ProcessTrigger @default(AUTO)
+  startedAt       DateTime       @default(now())
+  finishedAt      DateTime?
+  messagesScanned Int            @default(0)
+  messagesMatched Int            @default(0)
+  downloaded      Int            @default(0)
+  failed          Int            @default(0)
+  error           String?
+  correlationId   String         @default(uuid())
+  mailbox         Mailbox        @relation(fields: [mailboxId], references: [id], onDelete: Cascade)
+
+  @@index([mailboxId, startedAt])
+}
+
+enum JobStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+model HistoricalJob {
+  id               String    @id @default(cuid())
+  mailboxId        String
+  ruleIds          String[]
+  dateFrom         DateTime
+  dateTo           DateTime
+  simulate         Boolean   @default(true)
+  includeProcessed Boolean   @default(false)
+  status           JobStatus @default(QUEUED)
+  scanned          Int       @default(0)
+  matched          Int       @default(0)
+  downloaded       Int       @default(0)
+  checkpoint       String?   // paging position, for resume
+  createdById      String?
+  createdAt        DateTime  @default(now())
+  finishedAt       DateTime?
+  mailbox          Mailbox   @relation(fields: [mailboxId], references: [id], onDelete: Cascade)
+}
+
+// ───────────────────────── Notifications & ops ─────────────────────────
+
+enum AlertSeverity {
+  INFO
+  SUCCESS
+  WARNING
+  ERROR
+}
+
+model Notification {
+  id         String        @id @default(cuid())
+  type       String        // e.g. MAILBOX_DISCONNECTED, DOWNLOAD_FAILED
+  severity   AlertSeverity
+  title      String
+  message    String
+  alertKey   String?       // same key = same open alert (no spam)
+  resolvedAt DateTime?
+  link       String?
+  createdAt  DateTime      @default(now())
+
+  recipients NotificationRecipient[]
+
+  @@index([alertKey, resolvedAt])
+  @@index([createdAt])
+}
+
+model NotificationRecipient {
+  notificationId String
+  userId         String
+  readAt         DateTime?
+  notification   Notification @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([notificationId, userId])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId     String?
+  action     String   // e.g. RULE_UPDATED, LOGIN
+  entityType String?
+  entityId   String?
+  before     Json?
+  after      Json?
+  ip         String?
+  createdAt  DateTime @default(now())
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([entityType, entityId])
+}
+
+model ProcessingLog {
+  id            BigInt   @id @default(autoincrement())
+  level         String
+  source        String   // sync, rules, download, system
+  message       String
+  correlationId String?
+  mailboxId     String?
+  data          Json?
+  createdAt     DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([correlationId])
+}
+
+model ServiceHeartbeat {
+  instanceId String   @id
+  service    String   // worker
+  hostname   String
+  version    String
+  pid        Int
+  memoryMb   Int
+  startedAt  DateTime
+  lastBeatAt DateTime
+}
+
+model Setting {
+  key       String   @id
+  value     Json
+  updatedBy String?
+  updatedAt DateTime @updatedAt
+}
+
+model DailyStat {
+  day                String   // yyyy-MM-dd in business time zone
+  mailboxId          String   @default("")
+  ruleId             String   @default("")
+  emailsScanned      Int      @default(0)
+  emailsMatched      Int      @default(0)
+  downloadsSucceeded Int      @default(0)
+  downloadsFailed    Int      @default(0)
+  downloadsSkipped   Int      @default(0)
+  bytesDownloaded    BigInt   @default(0)
+
+  @@id([day, mailboxId, ruleId])
+}

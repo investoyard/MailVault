@@ -1,0 +1,13 @@
+node_modules/
+dist/
+logs/
+.env
+*.pfx
+*.pem
+*.key
+coverage/
+.vite/
+packages/db/generated/
+*.log
+.demo-output/
+secrets/
