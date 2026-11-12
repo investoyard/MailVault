@@ -23,6 +23,10 @@ import {
   ThunderboltOutlined,
   KeyOutlined,
   ApiOutlined,
+  ContactsOutlined,
+  ControlOutlined,
+  DatabaseOutlined,
+  MonitorOutlined,
 } from '@ant-design/icons';
 import { ChangePasswordModal, PreferencesModal } from '../components/AccountModals';
 import type { Module } from '@mailvault/shared';
@@ -39,26 +43,40 @@ interface NavItem {
   module: Module;
 }
 
-const NAV: { group: string; items: NavItem[] }[] = [
-  { group: 'Overview', items: [{ key: '/', label: 'Dashboard', icon: <AppstoreOutlined />, module: 'dashboard' }] },
+interface NavGroup {
+  key: string;
+  label: string;
+  icon: React.ReactNode;
+  items: NavItem[];
+}
+
+const HOME: NavItem = { key: '/', label: 'Dashboard', icon: <AppstoreOutlined />, module: 'dashboard' };
+
+const NAV: NavGroup[] = [
   {
-    group: 'Mail automation',
+    key: 'grp:mail',
+    label: 'Mail Automation',
+    icon: <MailOutlined />,
     items: [
-      { key: '/accounts', label: 'Email Accounts', icon: <MailOutlined />, module: 'accounts' },
+      { key: '/accounts', label: 'Email Accounts', icon: <ContactsOutlined />, module: 'accounts' },
       { key: '/rules', label: 'Download Rules', icon: <NodeIndexOutlined />, module: 'rules' },
       { key: '/rule-testing', label: 'Rule Testing', icon: <ExperimentOutlined />, module: 'ruleTesting' },
       { key: '/historical-jobs', label: 'Historical Jobs', icon: <HistoryOutlined />, module: 'ruleTesting' },
     ],
   },
   {
-    group: 'Records',
+    key: 'grp:records',
+    label: 'Records',
+    icon: <DatabaseOutlined />,
     items: [
       { key: '/history', label: 'Download History', icon: <FileSearchOutlined />, module: 'history' },
       { key: '/destinations', label: 'Destination Folders', icon: <FolderOpenOutlined />, module: 'destinations' },
     ],
   },
   {
-    group: 'Monitoring',
+    key: 'grp:monitoring',
+    label: 'Monitoring',
+    icon: <MonitorOutlined />,
     items: [
       { key: '/notifications', label: 'Notifications', icon: <BellOutlined />, module: 'notifications' },
       { key: '/logs', label: 'Audit & Logs', icon: <ProfileOutlined />, module: 'logs' },
@@ -66,7 +84,9 @@ const NAV: { group: string; items: NavItem[] }[] = [
     ],
   },
   {
-    group: 'Administration',
+    key: 'grp:admin',
+    label: 'Administration',
+    icon: <ControlOutlined />,
     items: [
       { key: '/users', label: 'Users & Roles', icon: <TeamOutlined />, module: 'users' },
       { key: '/integrations', label: 'Integrations', icon: <ApiOutlined />, module: 'settings' },
@@ -74,6 +94,18 @@ const NAV: { group: string; items: NavItem[] }[] = [
     ],
   },
 ];
+
+/** The parent group that contains a page, so it can be opened automatically. */
+const groupOf = (path: string) => NAV.find((g) => g.items.some((i) => i.key === path))?.key;
+
+const COLLAPSE_KEY = 'mv.sidebarCollapsed';
+const readCollapsed = () => {
+  try {
+    return localStorage.getItem(COLLAPSE_KEY) === '1';
+  } catch {
+    return false;
+  }
+};
 
 interface StatusResp {
   workers: { online: boolean; lastBeatAt: string; hostname: string }[];
@@ -97,7 +129,32 @@ export function AppLayout() {
   const [prefsOpen, setPrefsOpen] = useState(false);
   const navigate = useNavigate();
   const { pathname } = useLocation();
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsedState] = useState(readCollapsed);
+  const setCollapsed = (fn: (c: boolean) => boolean) =>
+    setCollapsedState((c) => {
+      const next = fn(c);
+      try {
+        localStorage.setItem(COLLAPSE_KEY, next ? '1' : '0');
+      } catch {
+        /* storage not available */
+      }
+      return next;
+    });
+  const selected = '/' + (pathname.split('/')[1] ?? '');
+  const [openKeys, setOpenKeys] = useState<string[]>(() => {
+    const g = groupOf(selected);
+    return g ? [g] : [];
+  });
+  // Navigating to a page opens its parent (and closes the others).
+  useEffect(() => {
+    const g = groupOf(selected);
+    if (g) setOpenKeys([g]);
+  }, [selected]);
+  // Accordion: only one parent open at a time; clicking an open parent closes it.
+  const onOpenChange = (keys: string[]) => {
+    const latest = keys.find((k) => !openKeys.includes(k));
+    setOpenKeys(latest ? [latest] : []);
+  };
 
   const status = useQuery({ queryKey: ['system-status'], queryFn: () => api.get<StatusResp>('/api/system/status'), refetchInterval: 30_000 });
   const notes = useQuery({ queryKey: ['notifications'], queryFn: () => api.get<NotificationRow[]>('/api/notifications'), refetchInterval: 30_000 });
@@ -126,17 +183,19 @@ export function AppLayout() {
   const unread = notes.data?.filter((n) => !n.readAt).length ?? 0;
   const worker = status.data?.workers.find((w) => w.online) ?? status.data?.workers[0];
 
-  const items: MenuProps['items'] = useMemo(
-    () =>
-      NAV.map((g) => ({
-        type: 'group' as const,
-        label: collapsed ? null : g.group,
-        children: g.items.filter((i) => can(i.module)).map((i) => ({ key: i.key, icon: i.icon, label: i.label })),
-      })).filter((g) => g.children.length > 0),
-    [can, collapsed],
-  );
-
-  const selected = '/' + (pathname.split('/')[1] ?? '');
+  const items: MenuProps['items'] = useMemo(() => {
+    const groups = NAV.map((g) => ({
+      key: g.key,
+      icon: g.icon,
+      label: g.label,
+      popupClassName: 'mv-menu-popup',
+      children: g.items.filter((i) => can(i.module)).map((i) => ({ key: i.key, icon: i.icon, label: i.label })),
+    }))
+      .filter((g) => g.children.length > 0)
+      // Collapsed: the hover pop-out gets the parent's name as a small heading.
+      .map((g) => (collapsed ? { ...g, children: [{ type: 'group' as const, key: `${g.key}:title`, label: g.label, children: g.children }] } : g));
+    return [...(can(HOME.module) ? [{ key: HOME.key, icon: HOME.icon, label: HOME.label }] : []), ...groups];
+  }, [can, collapsed]);
 
   return (
     <Layout style={{ minHeight: '100vh' }}>
@@ -152,7 +211,16 @@ export function AppLayout() {
             </div>
           )}
         </div>
-        <Menu mode="inline" selectedKeys={[selected]} items={items} onClick={(e) => navigate(e.key)} />
+        <Menu
+          mode="inline"
+          className="mv-nav"
+          selectedKeys={[selected]}
+          items={items}
+          onClick={(e) => navigate(e.key)}
+          {...(collapsed ? {} : { openKeys, onOpenChange })}
+          subMenuOpenDelay={0.05}
+          subMenuCloseDelay={0.15}
+        />
       </Sider>
 
       <Layout>

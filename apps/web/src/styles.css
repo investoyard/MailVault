@@ -78,11 +78,90 @@ body {
   padding-top: 8px;
 }
 
-.mv-sider .ant-menu-item-group-title {
+/* ───────── Sidebar navigation (parent / child) ───────── */
+.mv-nav.ant-menu-inline,
+.mv-nav.ant-menu-inline-collapsed {
+  padding: 10px 0;
+}
+
+.mv-nav .ant-menu-submenu-title,
+.mv-nav > .ant-menu-item {
+  font-weight: 500;
+  color: #334155;
+}
+
+/* Parent of the current page: coloured title + icon */
+.mv-nav .ant-menu-submenu-selected > .ant-menu-submenu-title,
+.mv-nav .ant-menu-submenu-selected > .ant-menu-submenu-title .anticon {
+  color: var(--mv-primary) !important;
+}
+
+/* Children: lighter, indented, with a thin guide line */
+.mv-nav .ant-menu-sub.ant-menu-inline {
+  background: transparent !important;
+  position: relative;
+}
+
+.mv-nav .ant-menu-sub.ant-menu-inline::before {
+  content: '';
+  position: absolute;
+  left: 31px;
+  top: 4px;
+  bottom: 4px;
+  width: 1px;
+  background: var(--mv-border);
+}
+
+.mv-nav .ant-menu-sub .ant-menu-item {
+  font-weight: 400;
+  color: #475569;
+  height: 36px !important;
+  line-height: 36px !important;
+}
+
+.mv-nav .ant-menu-sub .ant-menu-item .anticon {
+  font-size: 14px;
+  opacity: 0.85;
+}
+
+.mv-nav .ant-menu-sub .ant-menu-item-selected {
+  font-weight: 600;
+  color: var(--mv-primary);
+}
+
+/* Collapsed: parent icons only (Ant Design centres them; colour the current page's parent) */
+.mv-nav.ant-menu-inline-collapsed > .ant-menu-submenu-selected > .ant-menu-submenu-title {
+  background: var(--mv-primary-soft);
+}
+
+/* Hover pop-out shown when the sidebar is collapsed */
+.mv-menu-popup .ant-menu {
+  padding: 6px !important;
+  border-radius: 12px !important;
+  min-width: 210px;
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.12), 0 2px 6px rgba(15, 23, 42, 0.06) !important;
+  border: 1px solid var(--mv-border);
+}
+
+.mv-menu-popup .ant-menu-item-group-title {
+  font-size: 11px;
+  font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.6px;
+  color: #94a3b8;
+  padding: 6px 12px 4px !important;
+}
+
+.mv-menu-popup .ant-menu-item {
+  border-radius: 8px !important;
+  height: 38px !important;
+  line-height: 38px !important;
+}
+
+.mv-menu-popup .ant-menu-item-selected {
+  background: var(--mv-primary-soft) !important;
+  color: var(--mv-primary) !important;
   font-weight: 600;
-  padding-top: 14px !important;
 }
 
 .mv-header {
