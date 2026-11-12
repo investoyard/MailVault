@@ -14,7 +14,7 @@ import { dueMailboxes, syncMailbox } from './pipeline/sync.js';
 import { processDownloads, recoverStuckDownloads } from './pipeline/download.js';
 import { runHistoricalJob, runManualDownload } from './pipeline/historical.js';
 import { notifyChange } from './pipeline/alerts.js';
-import { dispatchPending, sendDailyDigest } from '@mailvault/db';
+import { dispatchPending, dispatchWebhooks, sendDailyDigest } from '@mailvault/db';
 import { checkCertificate, checkRepeatedFailures, runCleanup } from './jobs/maintenance.js';
 
 const version = (JSON.parse(readFileSync(resolve(ROOT, 'package.json'), 'utf8')) as { version: string }).version;
@@ -74,6 +74,7 @@ async function main() {
     await checkRepeatedFailures().catch((err) => log.warn({ err }, 'failure check failed'));
     const sent = await dispatchPending().catch((err) => (log.warn({ err }, 'notification delivery failed'), 0));
     if (sent) log.info({ sent }, 'alert emails sent');
+    await dispatchWebhooks().catch((err) => log.warn({ err }, 'webhook delivery failed'));
   });
 
   await boss.work('maintenance-nightly', async () => {
@@ -98,6 +99,7 @@ async function main() {
     const n = await processDownloads(ctx);
     if (n) {
       log.info({ processed: n }, 'downloads processed');
+      await dispatchWebhooks().catch((err) => log.warn({ err }, 'webhook delivery failed'));
       await notifyChange('downloads');
     }
   });

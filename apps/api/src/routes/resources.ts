@@ -390,6 +390,7 @@ export async function resourceRoutes(app: FastifyInstance) {
         take: q.pageSize,
         include: {
           attachment: { select: { name: true, sizeBytes: true, contentType: true } },
+          extracted: { orderBy: { innerPath: "asc" }, select: { id: true, innerPath: true, fileName: true, status: true, reason: true, destinationPath: true, bytes: true } },
           match: {
             select: {
               correlationId: true,

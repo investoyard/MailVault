@@ -1,4 +1,4 @@
-import { prisma } from '@mailvault/db';
+import { emitWebhookEvent, prisma } from '@mailvault/db';
 import { GraphError, explainGraphError } from '@mailvault/m365';
 import type { ManualDownloadJob } from '@mailvault/shared';
 import { plog } from './alerts.js';
@@ -75,6 +75,7 @@ export async function runHistoricalJob(jobId: string, ctx: PipelineContext): Pro
     await prisma.historicalJob.update({ where: { id: jobId }, data: { status: 'COMPLETED', finishedAt: ctx.now(), checkpoint: null } });
     const summary = `${scanned} email(s) scanned, ${matched} matched${job.simulate ? ' (simulation, nothing saved)' : `, ${downloaded} file(s) queued`}`;
     await plog('info', 'historical', `Historical ${mode} finished for ${mb.email}: ${summary}`, { mailboxId: mb.id });
+    await emitWebhookEvent('job.completed', { jobId, mailbox: mb.email, mode: job.simulate ? 'simulate' : 'execute', dateFrom: job.dateFrom.toISOString(), dateTo: job.dateTo.toISOString(), scanned, matched, filesQueued: downloaded }, { mailboxId: mb.id });
     if (job.createdById) {
       await prisma.notification.create({
         data: {

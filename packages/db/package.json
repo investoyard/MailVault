@@ -8,26 +8,24 @@
   "exports": {
     ".": "./src/index.ts"
   },
-  "prisma": {
-    "schema": "prisma/schema.prisma",
-    "seed": "tsx src/seed.ts"
-  },
   "scripts": {
     "generate": "prisma generate",
-    "migrate": "dotenv -e ../../.env -- prisma migrate dev",
-    "deploy": "dotenv -e ../../.env -- prisma migrate deploy",
-    "seed": "dotenv -e ../../.env -- tsx src/seed.ts",
-    "seed-demo": "dotenv -e ../../.env -- tsx src/seed-demo.ts",
+    "migrate": "prisma migrate dev && prisma generate",
+    "deploy": "prisma migrate deploy && prisma generate",
+    "seed": "tsx src/seed.ts",
+    "seed-demo": "tsx src/seed-demo.ts",
     "typecheck": "tsc --noEmit -p ."
   },
   "dependencies": {
     "@mailvault/shared": "0.1.0",
-    "@prisma/client": "^6.19.3",
-    "nodemailer": "^10.5.0"
+    "@prisma/adapter-pg": "^7.10.1",
+    "@prisma/client": "^7.10.1",
+    "nodemailer": "^10.5.0",
+    "dotenv": "^17.2.0"
   },
   "devDependencies": {
     "@types/nodemailer": "^8.0.2",
     "dotenv-cli": "^10.0.0",
-    "prisma": "^6.19.3"
+    "prisma": "^7.10.1"
   }
 }

@@ -2,10 +2,11 @@
 // Everything it creates uses the domain "demo.mailvault.local" or names starting with "Demo · ".
 //   npm run db:seed-demo            -> (re)create demo data
 //   npm run db:seed-demo -- --clear -> remove demo data only
+import './load-env.js';
 import { mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { prisma } from './index.js';
+import { encryptSecret, newWebhookSecret, prisma } from './index.js';
 
 const DOMAIN = 'demo.mailvault.local';
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
@@ -14,9 +15,11 @@ const OUT = resolve(ROOT, '.demo-output');
 async function clear() {
   const mailboxes = await prisma.mailbox.findMany({ where: { email: { endsWith: `@${DOMAIN}` } }, select: { id: true } });
   const ids = mailboxes.map((m) => m.id);
+  await prisma.message.deleteMany({ where: { mailboxId: { in: ids } } }); // removes matches/downloads first
   await prisma.rule.deleteMany({ where: { mailboxId: { in: ids } } });
   await prisma.mailbox.deleteMany({ where: { id: { in: ids } } });
   await prisma.destination.deleteMany({ where: { name: { startsWith: 'Demo · ' } } });
+  await prisma.webhook.deleteMany({ where: { name: { startsWith: 'Demo · ' } } });
   console.log(`Removed demo data (${ids.length} mailboxes).`);
 }
 
@@ -172,7 +175,18 @@ async function main() {
     data: { type: 'DAILY_SUMMARY', severity: 'SUCCESS', title: 'Daily summary: 38 attachments saved', message: '38 successful, 1 failed, 3 skipped across 2 mailboxes yesterday.', link: '/history', recipients, createdAt: new Date(now - 7 * 3600_000) },
   });
 
-  console.log('Demo data created: 3 mailboxes, 4 folders, 6 rules, 420 emails.');
+  await prisma.webhook.create({
+    data: {
+      name: 'Demo · ERP invoice inbox',
+      url: 'https://erp.demo.mailvault.local/api/mailvault',
+      secretEnc: encryptSecret(newWebhookSecret()),
+      events: ['file.saved', 'file.failed'],
+      mailboxIds: [mbAccounts.id],
+      enabled: false,
+    },
+  });
+
+  console.log('Demo data created: 3 mailboxes, 4 folders, 6 rules, 420 emails, 1 integration (paused).');
 }
 
 main()

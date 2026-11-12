@@ -1,4 +1,5 @@
 // Default settings. Run: npm run db:seed
+import './load-env.js';
 import { DEFAULT_BLOCKED_EXTENSIONS } from '@mailvault/shared';
 import { prisma } from './index.js';
 

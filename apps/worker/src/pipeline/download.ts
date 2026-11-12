@@ -1,8 +1,14 @@
-import { buildDestinationFolder, renderPattern, sanitizeFileName } from '@mailvault/core';
-import { FileTooLargeError, explainFsError, saveAttachment } from '@mailvault/core/node';
-import { prisma } from '@mailvault/db';
+import { createReadStream, createWriteStream } from 'node:fs';
+import { mkdir, rm } from 'node:fs/promises';
+import { join } from 'node:path';
+import { randomUUID } from 'node:crypto';
+import { Transform, type Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
+import { acceptInnerFile, buildDestinationFolder, containerKindOf, renderPattern, sanitizeFileName, type AttachmentInfo, type ContainerKind } from '@mailvault/core';
+import { DEFAULT_LIMITS, ExtractError, FileTooLargeError, assertRootExists, explainFsError, extractToTemp, saveAttachment } from '@mailvault/core/node';
+import { emitWebhookEvent, prisma, type DuplicatePolicy, type Prisma } from '@mailvault/db';
 import { GraphError, explainGraphError } from '@mailvault/m365';
-import { downloadConfigSchema } from '@mailvault/shared';
+import { attachmentFilterSchema, downloadConfigSchema, type AttachmentFilter } from '@mailvault/shared';
 import { log } from '../env.js';
 import { plog, raiseAlert } from './alerts.js';
 import { NotConfiguredError, type PipelineContext, type PipelineSettings } from './context.js';
@@ -19,6 +25,7 @@ type Outcome =
 export function classifyError(err: unknown): Outcome {
   if (err instanceof NotConfiguredError) return { kind: 'retry', code: 'NOT_CONFIGURED', message: err.message };
   if (err instanceof FileTooLargeError) return { kind: 'fail', code: 'TOO_LARGE', message: err.message };
+  if (err instanceof ExtractError) return { kind: 'fail', code: 'EXTRACT_FAILED', message: err.message };
   if (err instanceof GraphError) {
     if (err.status === 404) return { kind: 'fail', code: 'SOURCE_GONE', message: 'The email or attachment no longer exists in the mailbox' };
     return { kind: 'retry', code: `GRAPH_${err.status || 'NETWORK'}`, message: explainGraphError(err) };
@@ -101,6 +108,20 @@ async function downloadOne(id: string, ctx: PipelineContext, settings: PipelineS
   const dest = rule.destination;
   const correlationId = row.match.correlationId;
   const attempt = row.attempts + 1;
+  const eventData = (file: Record<string, unknown>) => ({
+    downloadId: id,
+    file,
+    email: {
+      mailbox: message.mailbox.email,
+      from: message.fromEmail,
+      subject: message.subject,
+      receivedAt: message.receivedAt.toISOString(),
+      internetMessageId: message.internetMessageId,
+    },
+    rule: { id: rule.id, name: rule.name },
+    attachment: { name: row.attachment.name, sizeBytes: row.attachment.sizeBytes },
+  });
+  const scope = { mailboxId: message.mailboxId, ruleId: rule.id };
 
   try {
     if (dest.status === 'UNAVAILABLE' && dest.lastCheckedAt && ctx.now().getTime() - dest.lastCheckedAt.getTime() < 5 * 60_000) {
@@ -120,21 +141,28 @@ async function downloadOne(id: string, ctx: PipelineContext, settings: PipelineS
     const folder = buildDestinationFolder(dest.basePath, cfg, pctx);
     const original = row.finalFileName ?? row.attachment.name;
     const pattern = cfg.fileNamePattern?.trim() || '{OriginalName}';
-    let fileName = sanitizeFileName(pattern === '{OriginalName}' ? original : renderPattern(pattern, { ...pctx, originalName: original }));
-    // Patterns like "{yyyyMMdd}_{OriginalName}" already include the extension; add it if a pattern dropped it.
-    const ext = original.includes('.') ? original.slice(original.lastIndexOf('.')) : '';
-    if (ext && !fileName.toLowerCase().endsWith(ext.toLowerCase())) fileName = sanitizeFileName(fileName + ext);
+    const targetName = (orig: string) => {
+      let name = sanitizeFileName(pattern === '{OriginalName}' ? orig : renderPattern(pattern, { ...pctx, originalName: orig }));
+      // Patterns like "{yyyyMMdd}_{OriginalName}" already include the extension; add it if a pattern dropped it.
+      const ext = orig.includes('.') ? orig.slice(orig.lastIndexOf('.')) : '';
+      if (ext && !name.toLowerCase().endsWith(ext.toLowerCase())) name = sanitizeFileName(name + ext);
+      return name;
+    };
+    const fileName = targetName(original);
+    const saveOpts = { folder, policy: rule.duplicatePolicy, fileDate: cfg.setFileDateToReceived ? message.receivedAt : undefined, maxBytes: settings.maxSizeMb * 1024 * 1024 };
 
     const provider = ctx.providerFor(message.mailbox);
     const source = await provider.openAttachment({ mailbox: message.mailbox.email, messageId: message.providerMessageId }, row.attachment.providerAttachmentId);
-    const result = await saveAttachment({
-      source,
-      folder,
-      fileName,
-      policy: rule.duplicatePolicy,
-      fileDate: cfg.setFileDateToReceived ? message.receivedAt : undefined,
-      maxBytes: settings.maxSizeMb * 1024 * 1024,
-    });
+
+    // ZIP / attached email that the rule wants unpacked?
+    const filter = attachmentFilterSchema.parse(rule.attachments);
+    const kind = containerKindOf(original, row.attachment.kind.toLowerCase() as AttachmentInfo['kind']);
+    if (kind && ((kind === 'zip' && filter.extractArchives) || (kind !== 'zip' && filter.extractEmails))) {
+      await unpackAndSave({ id, original, fileName, kind, source, filter, saveOpts, targetName, settings, ctx, correlationId, mailboxId: message.mailboxId, attempt, attachmentId: row.attachmentId, onSaved: (file) => emitWebhookEvent('file.saved', eventData(file), scope) });
+      return;
+    }
+
+    const result = await saveAttachment({ source, fileName, ...saveOpts });
 
     await prisma.$transaction([
       prisma.attachmentDownload.update({
@@ -155,6 +183,9 @@ async function downloadOne(id: string, ctx: PipelineContext, settings: PipelineS
       }),
       prisma.attachment.update({ where: { id: row.attachmentId }, data: { sha256: result.sha256 } }),
     ]);
+    if (result.status === 'SAVED') {
+      await emitWebhookEvent('file.saved', eventData({ name: result.fileName, path: result.path, sizeBytes: result.bytes, sha256: result.sha256 }), scope);
+    }
     await plog('info', 'download', result.status === 'SAVED' ? `Saved ${result.path}` : `Skipped ${result.fileName}: ${result.reason}`, {
       correlationId,
       mailboxId: message.mailboxId,
@@ -182,6 +213,7 @@ async function downloadOne(id: string, ctx: PipelineContext, settings: PipelineS
       mailboxId: message.mailboxId,
     });
     if (giveUp) {
+      await emitWebhookEvent('file.failed', { ...eventData({ name: row.finalFileName ?? row.attachment.name }), error: { code: o.code, message: o.message } }, scope);
       const day = ctx.now().toISOString().slice(0, 10);
       await raiseAlert({
         key: `DOWNLOAD_FAILED:${day}`,
@@ -192,5 +224,106 @@ async function downloadOne(id: string, ctx: PipelineContext, settings: PipelineS
         link: '/history?status=FAILED',
       });
     }
+  }
+}
+
+interface UnpackInput {
+  id: string;
+  original: string;
+  fileName: string;
+  kind: ContainerKind;
+  source: NodeJS.ReadableStream;
+  filter: AttachmentFilter;
+  saveOpts: { folder: string; policy: DuplicatePolicy; fileDate?: Date; maxBytes: number };
+  targetName: (orig: string) => string;
+  settings: PipelineSettings;
+  ctx: PipelineContext;
+  correlationId: string;
+  mailboxId: string;
+  attempt: number;
+  attachmentId: string;
+  onSaved: (file: Record<string, unknown>) => Promise<unknown>;
+}
+
+/**
+ * Downloads a ZIP / attached email to a temp folder next to the destination, unpacks the files the rule
+ * wants (same filters as normal attachments), saves each one, and records every file found inside.
+ */
+async function unpackAndSave(u: UnpackInput) {
+  const { folder } = u.saveOpts;
+  await assertRootExists(folder);
+  const work = join(folder, '.mailvault-tmp', randomUUID());
+  await mkdir(work, { recursive: true });
+  try {
+    // 1. Container to a temp file (size-limited, never fully in memory for ZIPs).
+    const containerPath = join(work, 'container');
+    let bytes = 0;
+    const limit = new Transform({
+      transform(chunk: Buffer, _e, cb) {
+        bytes += chunk.length;
+        if (bytes > u.saveOpts.maxBytes) return cb(new FileTooLargeError(`File is larger than ${Math.round(u.saveOpts.maxBytes / 1048576)} MB`));
+        cb(null, chunk);
+      },
+    });
+    await pipeline(u.source as Readable, limit, createWriteStream(containerPath));
+
+    // 2. Unpack what the rule accepts.
+    const policy = { blockedExtensions: u.settings.blockedExtensions, maxSizeMb: u.settings.maxSizeMb, includeInline: u.settings.includeInline };
+    const limits = { ...DEFAULT_LIMITS, maxEntryBytes: u.saveOpts.maxBytes, maxTotalBytes: Math.max(u.saveOpts.maxBytes * 4, 512 * 1048576) };
+    const extracted = await extractToTemp(containerPath, u.kind, join(work, 'files'), (name, size, inline) => acceptInnerFile(u.filter, name, size, inline, policy), limits);
+
+    // 3. Save each file with the rule's naming and duplicate policy.
+    await prisma.extractedFile.deleteMany({ where: { downloadId: u.id } }); // a retry starts clean
+    const rows: Prisma.ExtractedFileCreateManyInput[] = [];
+    let saved = 0;
+    for (const f of extracted.files) {
+      const r = await saveAttachment({ ...u.saveOpts, source: createReadStream(f.tmpPath), fileName: u.targetName(f.name) });
+      if (r.status === 'SAVED') {
+        saved++;
+        await u.onSaved({ name: r.fileName, path: r.path, sizeBytes: r.bytes, sha256: r.sha256, extractedFrom: { name: u.original, innerPath: f.innerPath } });
+      }
+      rows.push({
+        downloadId: u.id,
+        innerPath: f.innerPath,
+        fileName: r.fileName,
+        status: r.status === 'SAVED' ? 'SUCCESS' : 'SKIPPED',
+        reason: r.status === 'SKIPPED' ? r.reason : null,
+        destinationPath: r.path,
+        sha256: r.sha256,
+        bytes: BigInt(r.bytes),
+      });
+    }
+    for (const s of extracted.skipped) rows.push({ downloadId: u.id, innerPath: s.innerPath, status: 'SKIPPED', reason: s.reason });
+    if (rows.length) await prisma.extractedFile.createMany({ data: rows });
+
+    // 4. Optionally keep the ZIP / email itself.
+    let kept: Awaited<ReturnType<typeof saveAttachment>> | null = null;
+    if (u.filter.keepContainer) {
+      kept = await saveAttachment({ ...u.saveOpts, source: createReadStream(containerPath), fileName: u.fileName });
+      if (kept.status === 'SAVED') await u.onSaved({ name: kept.fileName, path: kept.path, sizeBytes: kept.bytes, sha256: kept.sha256 });
+    }
+
+    const what = u.kind === 'zip' ? 'ZIP' : 'attached email';
+    const summary = `${saved} file(s) saved from ${what}${extracted.skipped.length ? `, ${extracted.skipped.length} skipped` : ''}`;
+    const ok = saved > 0 || kept?.status === 'SAVED';
+    await prisma.attachmentDownload.update({
+      where: { id: u.id },
+      data: {
+        status: ok ? 'SUCCESS' : 'SKIPPED',
+        skipReason: ok ? null : extracted.files.length ? 'Files inside were already saved (duplicates)' : `Nothing inside the ${what} matched the rule`,
+        destinationPath: kept?.path ?? (saved ? folder : null),
+        finalFileName: kept?.fileName ?? u.original,
+        sha256: kept?.sha256 ?? null,
+        bytesWritten: BigInt(bytes),
+        downloadedAt: ok ? u.ctx.now() : null,
+        attempts: u.attempt,
+        errorCode: null,
+        errorMessage: null,
+        nextAttemptAt: null,
+      },
+    });
+    await plog('info', 'download', `${u.original}: ${summary}`, { correlationId: u.correlationId, mailboxId: u.mailboxId });
+  } finally {
+    await rm(work, { recursive: true, force: true });
   }
 }

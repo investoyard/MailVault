@@ -16,6 +16,7 @@ import { ruleRoutes } from './routes/rules.js';
 import { testingRoutes } from './routes/testing.js';
 import { eventRoutes } from './events.js';
 import { userRoutes } from './routes/users.js';
+import { integrationRoutes } from './routes/integrations.js';
 import { startWatchdog } from './watchdog.js';
 import { stopQueue } from './queue.js';
 
@@ -60,7 +61,9 @@ app.addHook('onRequest', async (req, reply) => {
   if (!origin) return; // non-browser clients (scripts, tests) send no Origin
   const host = (req.headers['x-forwarded-host'] as string | undefined) ?? req.headers.host;
   try {
-    if (new URL(origin).host !== host) return reply.code(403).send({ error: 'Request blocked: it did not come from MailVault' });
+    const originHost = new URL(origin).host;
+    const appHost = process.env.APP_URL ? new URL(process.env.APP_URL).host : null;
+    if (originHost !== host && originHost !== appHost) return reply.code(403).send({ error: 'Request blocked: it did not come from MailVault' });
   } catch {
     return reply.code(403).send({ error: 'Request blocked' });
   }
@@ -96,6 +99,7 @@ await app.register(ruleRoutes, { prefix: '/api' });
 await app.register(testingRoutes, { prefix: '/api' });
 await app.register(eventRoutes, { prefix: '/api' });
 await app.register(userRoutes, { prefix: '/api' });
+await app.register(integrationRoutes, { prefix: '/api' });
 
 // Production: serve the built React app and fall back to index.html for client routes.
 const webDist = resolve(ROOT, 'apps/web/dist');

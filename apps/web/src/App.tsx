@@ -15,6 +15,7 @@ import { SettingsPage } from './pages/SettingsPage';
 import { SystemStatusPage } from './pages/SystemStatusPage';
 import { RuleTestingPage } from './pages/RuleTestingPage';
 import { HistoricalJobsPage } from './pages/HistoricalJobsPage';
+import { IntegrationsPage } from './pages/IntegrationsPage';
 
 export function App() {
   const { user, loading } = useAuth();
@@ -50,6 +51,7 @@ export function App() {
         <Route path="system" element={<SystemStatusPage />} />
         <Route path="users" element={<UsersPage />} />
         <Route path="settings" element={<SettingsPage />} />
+        <Route path="integrations" element={<IntegrationsPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

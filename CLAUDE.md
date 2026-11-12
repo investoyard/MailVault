@@ -12,7 +12,7 @@ notifications, users/roles and audit logs. Runs on the company's Windows Server 
 
 - Node.js 24, TypeScript (strict), npm workspaces, `tsx` to run TS directly (no build step for server code)
 - API: **Fastify 5** + `@fastify/jwt` (httpOnly cookie `mv_session`) + `@fastify/cookie` + `@fastify/static`
-- DB: **PostgreSQL 16** on the shared server, port **5433**, database/role `mailvault`; **Prisma 6** (stay on 6.x)
+- DB: **PostgreSQL 16** on the shared server, port **5433**, database/role `mailvault`; **Prisma 7.10** with `@prisma/adapter-pg` (URL in `packages/db/prisma.config.ts`, not in schema.prisma)
 - Jobs: **pg-boss 12** (queues live in schema `pgboss` of the same DB; no Redis on Windows)
 - Microsoft Graph via plain `fetch` + `@azure/identity` (certificate preferred); read-only `Mail.Read`
 - Web: React 19 + Vite 7 + **Ant Design 5** (+ `@ant-design/v5-patch-for-react-19`) + TanStack Query + Recharts
@@ -91,6 +91,8 @@ npx tsx scripts/md-to-pdf.ts <file.md> [out.pdf]  # styled PDF of a doc via Edge
 - Phase 2 (admin experience): Rule Testing, historical jobs, history export/details/save-copy/bulk retry, live updates done; per-mailbox dashboard filter open.
 - Phase 3 (governance): users/roles/permission overrides, mailbox scoping, email/Teams alerts + prefs + digest, watchdog, cert-expiry, cleanup, audit export done.
 - Phase 4 (hardening): CSP/headers + Origin guard in apps/api/src/server.ts, npm run preflight, backup/restore scripts, drills + load test, docs/GO-LIVE.md, SECURITY.md, ADMIN-GUIDE.md, USER-GUIDE.md. Remaining: install on server + pilot (needs IT).
+- Prisma 7: `prisma migrate dev` no longer runs generate; the npm scripts `db:migrate`/`db:deploy` run `prisma generate` afterwards. Prisma no longer reads .env itself (prisma.config.ts and src/load-env.ts load it).
+- Phase 5: ZIP/attached-email extraction (core/src/node/extract.ts, ExtractedFile model), outbound webhooks (packages/db/src/webhooks.ts, Integrations page, docs/WEBHOOKS.md).
 - Windows PowerShell 5.1 strips double quotes from native args: pass SQL to psql via a temp file (-f), as restore-db.ps1 does.
 - Access control: requireAuth loads role/permissions/mailboxIds from DB per request (10 s cache, invalidateAccess on change). Use mailboxScope()/assertMailbox() in every route touching mailbox data.
 - Alerts/delivery live in packages/db/src/ops.ts (raiseAlert, resolveAlert, dispatchPending, sendDailyDigest); API watchdog (apps/api/src/watchdog.ts) also dispatches so alerts go out when the worker is down.

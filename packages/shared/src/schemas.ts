@@ -33,6 +33,12 @@ export const attachmentFilterSchema = z.object({
   maxSizeKb: z.number().int().positive().optional(),
   allowMultiple: z.boolean().default(true),
   includeInline: z.boolean().default(false),
+  /** Unpack .zip attachments and save the files inside that match this rule. */
+  extractArchives: z.boolean().default(false),
+  /** Unpack attached emails (.eml/.msg) and save their attachments that match this rule. */
+  extractEmails: z.boolean().default(false),
+  /** Also save the .zip/.eml/.msg itself when its contents are extracted. */
+  keepContainer: z.boolean().default(false),
 });
 export type AttachmentFilter = z.infer<typeof attachmentFilterSchema>;
 

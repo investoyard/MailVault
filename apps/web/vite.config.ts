@@ -6,7 +6,8 @@ export default defineConfig({
   server: {
     port: 5180,
     strictPort: true,
-    proxy: { '/api': 'http://127.0.0.1:3200' },
+    // Keep the browser's Host header so the API's cross-site (Origin) check sees the same host.
+    proxy: { '/api': { target: 'http://127.0.0.1:3200', changeOrigin: false } },
   },
   build: {
     outDir: 'dist',

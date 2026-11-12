@@ -28,6 +28,7 @@ const pages = [
   ['settings', '/settings'],
   ['rule-testing', '/rule-testing'],
   ['historical-jobs', '/historical-jobs'],
+  ['integrations', '/integrations'],
 ] as const;
 
 const browser = await chromium.launch({ channel: 'msedge', headless: true });

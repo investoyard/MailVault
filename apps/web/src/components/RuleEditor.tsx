@@ -49,7 +49,7 @@ const DEFAULTS: FormValues = {
     ignoreReplyPrefixes: true,
     range: undefined,
   },
-  attachments: { mode: 'SELECTED', extensions: ['pdf'], excludeNames: [], allowMultiple: true, includeInline: false },
+  attachments: { mode: 'SELECTED', extensions: ['pdf'], excludeNames: [], allowMultiple: true, includeInline: false, extractArchives: false, extractEmails: false, keepContainer: false },
   download: {
     destinationId: '',
     subfolderPattern: '{SenderDomain}\\{yyyy}\\{MM}',
@@ -191,6 +191,7 @@ export function RuleEditor({ open, rule, onClose }: { open: boolean; rule: RuleR
     if (!lines.length) lines.push('Every email with attachments');
     const a = values.attachments;
     lines.push(a?.mode === 'SELECTED' && a.extensions?.length ? `Save ${a.extensions.map((e) => e.toUpperCase()).join(', ')} files` : 'Save all attachment types');
+    if (a?.extractArchives || a?.extractEmails) lines.push(`Also look inside ${[a.extractArchives && 'ZIP files', a.extractEmails && 'attached emails'].filter(Boolean).join(' and ')}`);
     return lines;
   }, [values]);
 
@@ -366,6 +367,24 @@ export function RuleEditor({ open, rule, onClose }: { open: boolean; rule: RuleR
                 </Col>
                 <Col span={6}>
                   <Form.Item name={['attachments', 'includeInline']} label="Include inline images" valuePropName="checked">
+                    <Switch />
+                  </Form.Item>
+                </Col>
+              </Row>
+              <Divider style={{ margin: '4px 0 16px' }} />
+              <Row gutter={16}>
+                <Col span={8}>
+                  <Form.Item name={['attachments', 'extractArchives']} label="Unpack ZIP files" valuePropName="checked" tooltip="Saves the files inside a .zip that match the file types and names above.">
+                    <Switch />
+                  </Form.Item>
+                </Col>
+                <Col span={8}>
+                  <Form.Item name={['attachments', 'extractEmails']} label="Unpack attached emails" valuePropName="checked" tooltip="When an email is forwarded as an attachment (.eml/.msg), saves its attachments that match this rule.">
+                    <Switch />
+                  </Form.Item>
+                </Col>
+                <Col span={8}>
+                  <Form.Item name={['attachments', 'keepContainer']} label="Also keep the ZIP / email" valuePropName="checked">
                     <Switch />
                   </Form.Item>
                 </Col>

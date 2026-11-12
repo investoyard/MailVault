@@ -15,7 +15,7 @@ import { GraphError } from '@mailvault/m365';
 
 export interface FakeMessage extends MailEnvelope {
   body?: string;
-  attachments: (AttachmentInfo & { content?: string })[];
+  attachments: (AttachmentInfo & { content?: string | Buffer })[];
 }
 
 /** In-memory mailbox that behaves like Graph delta sync. */
@@ -97,7 +97,7 @@ export class FakeProvider implements MailProvider {
     if (next) throw next;
     const a = this.find(ref.messageId).attachments.find((x) => x.id === attachmentId);
     if (!a) throw new GraphError('Not found', 404, 'ErrorItemNotFound');
-    return Readable.from([Buffer.from(a.content ?? `content of ${a.name}`)]);
+    return Readable.from([Buffer.isBuffer(a.content) ? a.content : Buffer.from(a.content ?? `content of ${a.name}`)]);
   }
 
   private find(id: string) {

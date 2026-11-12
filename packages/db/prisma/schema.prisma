@@ -10,7 +10,6 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
 }
 
 // ───────────────────────── Users & access ─────────────────────────
@@ -298,10 +297,28 @@ model AttachmentDownload {
   updatedAt       DateTime       @updatedAt
   match           MessageRuleMatch @relation(fields: [matchId], references: [id], onDelete: Cascade)
   attachment      Attachment       @relation(fields: [attachmentId], references: [id], onDelete: Cascade)
+  extracted       ExtractedFile[]
 
   @@unique([matchId, attachmentId])
   @@index([status, nextAttemptAt])
   @@index([createdAt])
+}
+
+// Files unpacked from a ZIP or an attached email (one row per file inside, saved or skipped).
+model ExtractedFile {
+  id              String         @id @default(cuid())
+  downloadId      String
+  innerPath       String
+  fileName        String?
+  status          DownloadStatus
+  reason          String?
+  destinationPath String?
+  sha256          String?
+  bytes           BigInt?
+  createdAt       DateTime       @default(now())
+  download        AttachmentDownload @relation(fields: [downloadId], references: [id], onDelete: Cascade)
+
+  @@index([downloadId])
 }
 
 model SyncRun {
@@ -445,4 +462,43 @@ model DailyStat {
   bytesDownloaded    BigInt   @default(0)
 
   @@id([day, mailboxId, ruleId])
+}
+
+// ───────────────────────── Integrations ─────────────────────────
+
+// Outbound webhook: MailVault POSTs signed JSON to another system (e.g. an ERP) when something happens.
+model Webhook {
+  id              String    @id @default(cuid())
+  name            String
+  url             String
+  secretEnc       String    // signing secret, AES-256-GCM encrypted with SECRET_ENC_KEY
+  events          String[]  // file.saved, file.failed, job.completed
+  mailboxIds      String[]  // empty = all mailboxes
+  ruleIds         String[]  // empty = all rules
+  enabled         Boolean   @default(true)
+  lastStatus      Int?
+  lastError       String?
+  lastDeliveredAt DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  deliveries WebhookDelivery[]
+}
+
+model WebhookDelivery {
+  id            String    @id @default(cuid())
+  webhookId     String
+  event         String
+  payload       Json
+  status        String    @default("PENDING") // PENDING, RETRYING, SUCCESS, FAILED
+  attempts      Int       @default(0)
+  nextAttemptAt DateTime?
+  responseCode  Int?
+  error         String?
+  createdAt     DateTime  @default(now())
+  deliveredAt   DateTime?
+  webhook       Webhook   @relation(fields: [webhookId], references: [id], onDelete: Cascade)
+
+  @@index([status, nextAttemptAt])
+  @@index([webhookId, createdAt])
 }

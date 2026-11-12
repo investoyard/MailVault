@@ -23,6 +23,7 @@ interface Row {
   downloadedAt: string | null;
   createdAt: string;
   sha256: string | null;
+  extracted: { id: string; innerPath: string; fileName: string | null; status: DownloadStatus; reason: string | null; destinationPath: string | null; bytes: number | null }[];
   attachment: { name: string; sizeBytes: number; contentType: string | null };
   match: {
     correlationId: string;
@@ -205,6 +206,11 @@ export function HistoryPage() {
                     {r.finalFileName ?? r.attachment.name}
                   </Typography.Text>
                   <span className="mv-muted" style={{ fontSize: 12.5 }}>{fmtBytes(r.attachment.sizeBytes)}</span>
+                  {r.extracted.length > 0 && (
+                    <Tag style={{ marginLeft: 6 }} color="purple">
+                      {r.extracted.filter((x) => x.status === 'SUCCESS').length} of {r.extracted.length} inside saved
+                    </Tag>
+                  )}
                 </div>
               ),
             },
@@ -258,6 +264,41 @@ export function HistoryPage() {
               <Descriptions.Item label="Received">{fmtDateTime(selected.match.message.receivedAt)}</Descriptions.Item>
               <Descriptions.Item label="Mailbox">{selected.match.message.mailbox.email}</Descriptions.Item>
             </Descriptions>
+
+            {selected.extracted.length > 0 && (
+              <>
+                <Typography.Title level={5}>Files inside ({selected.extracted.length})</Typography.Title>
+                <Table
+                  size="small"
+                  rowKey="id"
+                  pagination={selected.extracted.length > 10 ? { pageSize: 10, size: 'small' } : false}
+                  style={{ marginBottom: 20 }}
+                  dataSource={selected.extracted}
+                  columns={[
+                    {
+                      title: 'File',
+                      render: (_, x) => (
+                        <div>
+                          <div style={{ fontWeight: 500 }}>{x.fileName ?? x.innerPath.split(/[\\/]/).pop()}</div>
+                          {x.innerPath !== x.fileName && <div className="mv-muted mv-mono" style={{ fontSize: 11.5 }}>{x.innerPath}</div>}
+                        </div>
+                      ),
+                    },
+                    { title: 'Result', width: 210, render: (_, x) => (x.reason ? <Tooltip title={x.reason}><span><DownloadStatusTag status={x.status} /></span></Tooltip> : <DownloadStatusTag status={x.status} />) },
+                    {
+                      title: '',
+                      width: 44,
+                      render: (_, x) =>
+                        x.destinationPath && (
+                          <Tooltip title={`Copy path: ${x.destinationPath}`}>
+                            <Button size="small" type="text" icon={<CopyOutlined />} onClick={() => copy(x.destinationPath!)} />
+                          </Tooltip>
+                        ),
+                    },
+                  ]}
+                />
+              </>
+            )}
 
             <Typography.Title level={5}>Attachment</Typography.Title>
             <Descriptions column={1} size="small" bordered style={{ marginBottom: 20 }} styles={{ label: { width: 150 } }}>

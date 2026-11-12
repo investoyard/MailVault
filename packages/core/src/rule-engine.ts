@@ -132,6 +132,24 @@ export interface AttachmentDecision {
   /** Name to save as (item attachments get ".eml"). */
   saveName: string;
   reason?: string;
+  /** Set when the file's contents should be unpacked instead of (or as well as) saving it. */
+  extract?: ContainerKind;
+}
+
+export type ContainerKind = 'zip' | 'eml' | 'msg';
+
+/** Archives and attached emails whose contents MailVault can unpack. */
+export function containerKindOf(name: string, kind: AttachmentInfo['kind'] = 'file'): ContainerKind | null {
+  if (kind === 'item') return 'eml';
+  const ext = fileExtension(name);
+  return ext === 'zip' ? 'zip' : ext === 'eml' ? 'eml' : ext === 'msg' ? 'msg' : null;
+}
+
+/** Decides whether one file found inside an archive/attached email should be saved (same rules, no further unpacking). */
+export function acceptInnerFile(f: AttachmentFilter, name: string, size: number, isInline: boolean, policy: AttachmentPolicy): { include: boolean; reason?: string } {
+  const plain = { ...f, extractArchives: false, extractEmails: false, allowMultiple: true };
+  const [d] = filterAttachments(plain, [{ id: name, name, size, isInline, kind: 'file' }], policy);
+  return { include: d!.include, reason: d!.reason };
 }
 
 const ENCRYPTED_NAMES = new Set(['smime.p7m', 'message.rpmsg']);
@@ -154,6 +172,15 @@ export function filterAttachments(f: AttachmentFilter, attachments: AttachmentIn
     if (a.isInline && !(f.includeInline || policy.includeInline)) return skip('Inline image excluded');
     if (blocked.has(ext)) return skip(`Blocked file type (.${ext})`);
     if (a.size > policy.maxSizeMb * 1024 * 1024) return skip(`Larger than the ${policy.maxSizeMb} MB limit`);
+
+    // Archives / attached emails to unpack: the rule's file filters apply to the files inside instead.
+    const container = containerKindOf(saveName, a.kind);
+    if (container && ((container === 'zip' && f.extractArchives) || (container !== 'zip' && f.extractEmails))) {
+      if (!f.allowMultiple && includedCount >= 1) return skip('Rule allows only one attachment per email');
+      includedCount++;
+      return { attachment: a, include: true, saveName, extract: container };
+    }
+
     if (f.mode === 'SELECTED' && exts.size && !exts.has(ext)) return skip(`File type .${ext || '(none)'} not selected in rule`);
     if (f.nameContains && !nameLc.includes(lc(f.nameContains))) return skip(`Name does not contain "${f.nameContains}"`);
     if (excludes.some((x) => nameLc.includes(x))) return skip('Name is in the exclude list');

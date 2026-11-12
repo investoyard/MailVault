@@ -22,6 +22,7 @@ import {
   InboxOutlined,
   ThunderboltOutlined,
   KeyOutlined,
+  ApiOutlined,
 } from '@ant-design/icons';
 import { ChangePasswordModal, PreferencesModal } from '../components/AccountModals';
 import type { Module } from '@mailvault/shared';
@@ -68,6 +69,7 @@ const NAV: { group: string; items: NavItem[] }[] = [
     group: 'Administration',
     items: [
       { key: '/users', label: 'Users & Roles', icon: <TeamOutlined />, module: 'users' },
+      { key: '/integrations', label: 'Integrations', icon: <ApiOutlined />, module: 'settings' },
       { key: '/settings', label: 'Settings', icon: <SettingOutlined />, module: 'settings' },
     ],
   },

@@ -117,5 +117,14 @@ powershell -ExecutionPolicy Bypass -File scripts\setup-iis.ps1 -HostName mailvau
 | Docs: GO-LIVE checklist + UAT, SECURITY, ADMIN-GUIDE, USER-GUIDE (+ PDFs in docs/) | Done |
 | Install services / IIS / backup task on this server, pilot | **Waiting for IT items + your go-ahead** |
 
+**Phase 5 – Enhancements (started):**
+
+| Item | Status |
+|---|---|
+| Prisma 6 → 7.10.1 (driver adapter, `prisma.config.ts`) – `npm audit` now clean | Done |
+| Unpack ZIP files and attached emails (.eml/.msg) per rule, zip-bomb safe, per-file history | Done, unit + integration tested |
+| Outbound webhooks (file.saved / file.failed / job.completed), signed, retries, delivery log, Integrations screen | Done, integration + live tested |
+| Graph change notifications, SharePoint/OneDrive destinations, Gmail, AI classification | Not started |
+
 Integration tests: `npm run test:integration -w @mailvault/worker` (uses database `mailvault_test`).
 PDF of any doc: `npx tsx scripts/md-to-pdf.ts docs/ENTRA-SETUP.md`.
