@@ -10,6 +10,7 @@ import 'antd/dist/reset.css';
 import './styles.css';
 import { theme } from './theme';
 import { AuthProvider } from './auth';
+import { ConfirmProvider } from './components/confirm';
 import { App } from './App';
 
 const queryClient = new QueryClient({
@@ -22,9 +23,11 @@ createRoot(document.getElementById('root')!).render(
       <AntApp>
         <QueryClientProvider client={queryClient}>
           <BrowserRouter>
-            <AuthProvider>
-              <App />
-            </AuthProvider>
+            <ConfirmProvider>
+              <AuthProvider>
+                <App />
+              </AuthProvider>
+            </ConfirmProvider>
           </BrowserRouter>
         </QueryClientProvider>
       </AntApp>

@@ -10,6 +10,7 @@ import type { Dayjs } from 'dayjs';
 import { DOWNLOAD_STATUSES, DOWNLOAD_STATUS_LABELS, type DownloadStatus } from '@mailvault/shared';
 import { api, qs } from '../api';
 import { DownloadStatusTag, EmptyState, PageHeader } from '../components/ui';
+import { useConfirm } from '../components/confirm';
 import { fmtBytes, fmtDateTime, fmtNumber, fmtShort } from '../format';
 
 interface Row {
@@ -58,6 +59,7 @@ interface Filters {
 
 export function HistoryPage() {
   const { message } = App.useApp();
+  const confirm = useConfirm();
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
   const [params] = useSearchParams();
@@ -136,7 +138,18 @@ export function HistoryPage() {
               Refresh
             </Button>
             {picked.length > 0 && can('history', 'execute') && (
-              <Button icon={<RedoOutlined />} loading={bulk.isPending} onClick={() => bulk.mutate(picked)}>
+              <Button icon={<RedoOutlined />} loading={bulk.isPending} onClick={() =>
+                  void confirm({
+                    tone: 'primary',
+                    icon: <RedoOutlined />,
+                    title: 'Retry the selected downloads?',
+                    subject: `${picked.length} selected`,
+                    description: 'Failed or waiting downloads are queued again. Ones that already succeeded are skipped.',
+                    okText: 'Retry downloads',
+                    onConfirm: () => bulk.mutateAsync(picked),
+                  })
+                }
+              >
                 Retry {picked.length} selected
               </Button>
             )}

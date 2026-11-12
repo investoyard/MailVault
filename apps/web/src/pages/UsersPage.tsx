@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Alert, App, Avatar, Button, Card, Checkbox, Drawer, Form, Input, Modal, Radio, Select, Space, Switch, Table, Tag, Tooltip, Typography } from 'antd';
-import { CheckOutlined, EditOutlined, KeyOutlined, MinusOutlined, SafetyCertificateOutlined, UserAddOutlined } from '@ant-design/icons';
+import { CheckCircleOutlined, CheckOutlined, EditOutlined, StopOutlined, KeyOutlined, MinusOutlined, SafetyCertificateOutlined, UserAddOutlined } from '@ant-design/icons';
 import { ACTIONS, MODULES, ROLE_TEMPLATES, ROLES, type Action, type Module, type PermissionSet, type Role } from '@mailvault/shared';
 import { api } from '../api';
 import { useAuth } from '../auth';
 import { PageHeader } from '../components/ui';
+import { useConfirm } from '../components/confirm';
 import { fmtDateTime, fromNow } from '../format';
 
 interface User {
@@ -208,6 +209,7 @@ function UserDrawer({ open, user, onClose }: { open: boolean; user: User | null;
 export function UsersPage() {
   const { can, user: me } = useAuth();
   const { message } = App.useApp();
+  const confirm = useConfirm();
   const [drawer, setDrawer] = useState<{ open: boolean; user: User | null }>({ open: false, user: null });
   const [resetFor, setResetFor] = useState<User | null>(null);
   const [newPw, setNewPw] = useState('');
@@ -221,6 +223,17 @@ export function UsersPage() {
       message.success(r.message);
       setResetFor(null);
       setNewPw('');
+    },
+    onError: (e: Error) => message.error(e.message),
+  });
+
+  const qc = useQueryClient();
+  const setActive = useMutation({
+    mutationFn: ({ user: u, isActive }: { user: User; isActive: boolean }) =>
+      api.put(`/api/users/${u.id}`, { displayName: u.displayName, email: u.email ?? '', role: u.role, mailboxIds: u.mailboxIds, permissions: u.permissions, isActive }),
+    onSuccess: (_d, v) => {
+      message.success(v.isActive ? `${v.user.displayName} can sign in again.` : `${v.user.displayName} has been deactivated.`);
+      void qc.invalidateQueries({ queryKey: ['users'] });
     },
     onError: (e: Error) => message.error(e.message),
   });
@@ -302,6 +315,37 @@ export function UsersPage() {
                   <Space>
                     <Button icon={<EditOutlined />} onClick={() => setDrawer({ open: true, user: u })}>Edit</Button>
                     <Tooltip title="Reset password"><Button icon={<KeyOutlined />} onClick={() => setResetFor(u)} disabled={!!u.entraObjectId} /></Tooltip>
+                    <Tooltip title={u.id === me?.id ? 'You cannot deactivate your own account' : u.isActive ? 'Deactivate' : 'Activate'}>
+                      <Button
+                        danger={u.isActive}
+                        icon={u.isActive ? <StopOutlined /> : <CheckCircleOutlined />}
+                        disabled={u.id === me?.id}
+                        aria-label={`${u.isActive ? 'Deactivate' : 'Activate'} ${u.displayName}`}
+                        onClick={() =>
+                          void confirm(
+                            u.isActive
+                              ? {
+                                  tone: 'danger',
+                                  icon: <StopOutlined />,
+                                  title: 'Deactivate this user?',
+                                  subject: `${u.displayName} · ${u.username}`,
+                                  description: 'They lose access within a few seconds and cannot sign in until reactivated. Their history and audit records are kept.',
+                                  okText: 'Deactivate',
+                                  onConfirm: () => setActive.mutateAsync({ user: u, isActive: false }),
+                                }
+                              : {
+                                  tone: 'success',
+                                  icon: <CheckCircleOutlined />,
+                                  title: 'Activate this user?',
+                                  subject: `${u.displayName} · ${u.username}`,
+                                  description: 'They can sign in again with their existing role and access.',
+                                  okText: 'Activate',
+                                  onConfirm: () => setActive.mutateAsync({ user: u, isActive: true }),
+                                },
+                          )
+                        }
+                      />
+                    </Tooltip>
                   </Space>
                 ),
             },

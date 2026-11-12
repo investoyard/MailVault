@@ -6,6 +6,7 @@ import type { DestinationStatus } from '@mailvault/shared';
 import { api } from '../api';
 import { useAuth } from '../auth';
 import { DestinationStatusTag, EmptyState, PageHeader } from '../components/ui';
+import { useConfirm } from '../components/confirm';
 import { RuleEditor, type RuleRecord } from '../components/RuleEditor';
 import { fmtNumber } from '../format';
 
@@ -40,6 +41,7 @@ function conditionSummary(r: Rule): string {
 export function RulesPage() {
   const { can } = useAuth();
   const { message } = App.useApp();
+  const confirm = useConfirm();
   const qc = useQueryClient();
   const [search, setSearch] = useState('');
   const [mailbox, setMailbox] = useState<string | undefined>();
@@ -141,7 +143,28 @@ export function RulesPage() {
               width: 120,
               render: (_, r) => (
                 <Space size={10}>
-                  <Switch checked={r.enabled} disabled={!can('rules', 'edit')} loading={toggle.isPending && toggle.variables?.id === r.id} onChange={(enabled) => toggle.mutate({ id: r.id, enabled })} />
+                  <Switch checked={r.enabled} disabled={!can('rules', 'edit')} loading={toggle.isPending && toggle.variables?.id === r.id} onChange={(enabled) =>
+                      void confirm(
+                        enabled
+                          ? {
+                              tone: 'success',
+                              title: 'Enable this rule?',
+                              subject: r.name,
+                              description: 'Matching emails that arrive from now on will be processed by this rule.',
+                              okText: 'Enable rule',
+                              onConfirm: () => toggle.mutateAsync({ id: r.id, enabled }),
+                            }
+                          : {
+                              tone: 'warning',
+                              title: 'Disable this rule?',
+                              subject: r.name,
+                              description: 'New emails will no longer be checked against it. The rule and its history are kept, and you can enable it again any time.',
+                              okText: 'Disable rule',
+                              onConfirm: () => toggle.mutateAsync({ id: r.id, enabled }),
+                            },
+                      )
+                    }
+                  />
                   {can('rules', 'edit') && (
                     <Tooltip title="Edit rule">
                       <Button icon={<EditOutlined />} onClick={() => void openEdit(r.id)} aria-label={`Edit ${r.name}`} />

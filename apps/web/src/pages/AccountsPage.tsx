@@ -8,6 +8,7 @@ import type { MailboxAuthMode, MailboxStatus } from '@mailvault/shared';
 import { api } from '../api';
 import { useAuth } from '../auth';
 import { EmptyState, MailboxStatusTag, PageHeader } from '../components/ui';
+import { useConfirm } from '../components/confirm';
 import { fmtDateTime, fmtNumber, fromNow } from '../format';
 
 interface Mailbox {
@@ -37,6 +38,7 @@ interface TestResult {
 export function AccountsPage() {
   const { can } = useAuth();
   const { message } = App.useApp();
+  const confirm = useConfirm();
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
   const [testing, setTesting] = useState<string | null>(null);
@@ -164,7 +166,27 @@ export function AccountsPage() {
                   checked={m.enabled}
                   disabled={!can('accounts', 'edit')}
                   loading={toggle.isPending && toggle.variables?.id === m.id}
-                  onChange={(enabled) => toggle.mutate({ id: m.id, enabled })}
+                  onChange={(enabled) =>
+                    void confirm(
+                      enabled
+                        ? {
+                            tone: 'success',
+                            title: 'Resume monitoring?',
+                            subject: m.email,
+                            description: 'MailVault will start checking this mailbox for new emails again.',
+                            okText: 'Resume monitoring',
+                            onConfirm: () => toggle.mutateAsync({ id: m.id, enabled }),
+                          }
+                        : {
+                            tone: 'warning',
+                            title: 'Pause monitoring?',
+                            subject: m.email,
+                            description: 'New emails in this mailbox will not be processed until you resume. Nothing already saved is affected.',
+                            okText: 'Pause monitoring',
+                            onConfirm: () => toggle.mutateAsync({ id: m.id, enabled }),
+                          },
+                    )
+                  }
                 />
               ),
             },

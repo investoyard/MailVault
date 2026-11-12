@@ -6,6 +6,7 @@ import dayjs, { type Dayjs } from 'dayjs';
 import { api } from '../api';
 import { useAuth } from '../auth';
 import { EmptyState, PageHeader } from '../components/ui';
+import { useConfirm } from '../components/confirm';
 import { fmtDate, fmtDateTime, fmtNumber } from '../format';
 
 interface Job {
@@ -36,6 +37,7 @@ const STATUS: Record<Job['status'], { color: string; label: string }> = {
 export function HistoricalJobsPage() {
   const { can } = useAuth();
   const { message } = App.useApp();
+  const confirm = useConfirm();
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
   const [form] = Form.useForm();
@@ -148,11 +150,37 @@ export function HistoricalJobsPage() {
               render: (_, j) =>
                 can('ruleTesting', 'execute') &&
                 (j.status === 'RUNNING' || j.status === 'QUEUED' ? (
-                  <Button icon={<StopOutlined />} danger onClick={() => action.mutate({ id: j.id, kind: 'cancel' })}>
+                  <Button
+                    icon={<StopOutlined />}
+                    danger
+                    onClick={() =>
+                      void confirm({
+                        tone: 'danger',
+                        icon: <StopOutlined />,
+                        title: 'Cancel this historical job?',
+                        description: 'Processing stops after the current email. Progress is saved, so you can resume it later.',
+                        okText: 'Cancel job',
+                        cancelText: 'Keep running',
+                        onConfirm: () => action.mutateAsync({ id: j.id, kind: 'cancel' }),
+                      })
+                    }
+                  >
                     Cancel
                   </Button>
                 ) : j.status === 'CANCELLED' || j.status === 'FAILED' ? (
-                  <Button icon={<CaretRightOutlined />} onClick={() => action.mutate({ id: j.id, kind: 'resume' })}>
+                  <Button
+                    icon={<CaretRightOutlined />}
+                    onClick={() =>
+                      void confirm({
+                        tone: 'primary',
+                        icon: <CaretRightOutlined />,
+                        title: 'Resume this historical job?',
+                        description: 'It continues from where it stopped.',
+                        okText: 'Resume job',
+                        onConfirm: () => action.mutateAsync({ id: j.id, kind: 'resume' }),
+                      })
+                    }
+                  >
                     Resume
                   </Button>
                 ) : null),

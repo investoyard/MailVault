@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Alert, App, Button, Card, Checkbox, Drawer, Form, Input, Modal, Popconfirm, Select, Space, Switch, Table, Tag, Tooltip, Typography } from 'antd';
+import { Alert, App, Button, Card, Checkbox, Drawer, Form, Input, Modal, Select, Space, Switch, Table, Tag, Tooltip, Typography } from 'antd';
 import { ApiOutlined, CopyOutlined, DeleteOutlined, EditOutlined, KeyOutlined, PlusOutlined, RedoOutlined, SendOutlined, UnorderedListOutlined } from '@ant-design/icons';
 import { api } from '../api';
 import { useAuth } from '../auth';
 import { EmptyState, PageHeader } from '../components/ui';
+import { useConfirm } from '../components/confirm';
 import { fmtDateTime, fromNow } from '../format';
 
 interface Hook {
@@ -167,6 +168,7 @@ function DeliveriesDrawer({ hook, onClose }: { hook: Hook | null; onClose: () =>
 export function IntegrationsPage() {
   const { can } = useAuth();
   const { message } = App.useApp();
+  const confirm = useConfirm();
   const qc = useQueryClient();
   const [drawer, setDrawer] = useState<{ open: boolean; hook: Hook | null }>({ open: false, hook: null });
   const [secret, setSecret] = useState<string | null>(null);
@@ -259,12 +261,39 @@ export function IntegrationsPage() {
                   {edit && (
                     <>
                       <Tooltip title="Edit"><Button icon={<EditOutlined />} onClick={() => setDrawer({ open: true, hook: h })} /></Tooltip>
-                      <Popconfirm title="Create a new signing secret?" description="The receiving system must be updated with the new secret." onConfirm={() => action.mutate({ id: h.id, kind: 'rotate' })}>
-                        <Tooltip title="New signing secret"><Button icon={<KeyOutlined />} /></Tooltip>
-                      </Popconfirm>
-                      <Popconfirm title="Remove this integration?" description="Its delivery log is removed too." okButtonProps={{ danger: true }} onConfirm={() => action.mutate({ id: h.id, kind: 'delete' })}>
-                        <Button danger icon={<DeleteOutlined />} />
-                      </Popconfirm>
+                      <Tooltip title="New signing secret">
+                        <Button
+                          icon={<KeyOutlined />}
+                          onClick={() =>
+                            void confirm({
+                              tone: 'warning',
+                              icon: <KeyOutlined />,
+                              title: 'Create a new signing secret?',
+                              subject: h.name,
+                              description: 'The current secret stops working immediately. The receiving system must be updated with the new secret.',
+                              okText: 'Create new secret',
+                              onConfirm: () => action.mutateAsync({ id: h.id, kind: 'rotate' }),
+                            })
+                          }
+                        />
+                      </Tooltip>
+                      <Tooltip title="Remove">
+                        <Button
+                          danger
+                          icon={<DeleteOutlined />}
+                          onClick={() =>
+                            void confirm({
+                              tone: 'danger',
+                              icon: <DeleteOutlined />,
+                              title: 'Remove this integration?',
+                              subject: h.name,
+                              description: 'MailVault will stop sending events to it, and its delivery log is removed too. This cannot be undone.',
+                              okText: 'Remove',
+                              onConfirm: () => action.mutateAsync({ id: h.id, kind: 'delete' }),
+                            })
+                          }
+                        />
+                      </Tooltip>
                     </>
                   )}
                 </Space>

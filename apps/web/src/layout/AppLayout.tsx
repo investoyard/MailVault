@@ -29,6 +29,7 @@ import {
   MonitorOutlined,
 } from '@ant-design/icons';
 import { ChangePasswordModal, PreferencesModal } from '../components/AccountModals';
+import { useConfirm } from '../components/confirm';
 import type { Module } from '@mailvault/shared';
 import { useAuth } from '../auth';
 import { api } from '../api';
@@ -125,6 +126,7 @@ const ROLE_LABEL: Record<string, string> = {
 
 export function AppLayout() {
   const { user, logout, can, mustChangePassword, passwordChanged } = useAuth();
+  const confirm = useConfirm();
   const [pwOpen, setPwOpen] = useState(false);
   const [prefsOpen, setPrefsOpen] = useState(false);
   const navigate = useNavigate();
@@ -271,7 +273,15 @@ export function AppLayout() {
                   { key: 'logout', icon: <LogoutOutlined />, label: 'Sign out', danger: true },
                 ],
                 onClick: (e) => {
-                  if (e.key === 'logout') void logout();
+                  if (e.key === 'logout')
+                    void confirm({
+                      tone: 'primary',
+                      icon: <LogoutOutlined />,
+                      title: 'Sign out of MailVault?',
+                      description: 'You will need to sign in again to continue. Background processing keeps running.',
+                      okText: 'Sign out',
+                      onConfirm: logout,
+                    });
                   if (e.key === 'password') setPwOpen(true);
                   if (e.key === 'prefs') setPrefsOpen(true);
                 },
