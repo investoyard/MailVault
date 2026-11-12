@@ -101,13 +101,13 @@ export function renderEmail(items: { title: string; message: string; severity: S
       return `<tr><td style="padding:12px 16px;border-bottom:1px solid #eef1f6">
         <div style="font-weight:600;color:${COLORS[n.severity]}">${esc(n.title)}</div>
         <div style="color:#334155;margin-top:4px">${esc(n.message)}</div>
-        ${url ? `<a href="${esc(url)}" style="color:#4f46e5;font-size:13px">Open in MailVault</a>` : ''}
+        ${url ? `<a href="${esc(url)}" style="color:#3C2E7E;font-size:13px">Open in MailVault</a>` : ''}
       </td></tr>`;
     })
     .join('');
   const html = `<div style="font-family:Segoe UI,Arial,sans-serif;background:#f5f7fb;padding:24px">
     <table style="max-width:620px;margin:0 auto;background:#fff;border:1px solid #e6e9f0;border-radius:12px;border-collapse:separate;overflow:hidden" width="100%" cellspacing="0">
-      <tr><td style="background:#4f46e5;color:#fff;padding:16px 20px;font-size:17px;font-weight:700">MailVault · ${esc(heading)}</td></tr>
+      <tr><td style="background:#3C2E7E;color:#fff;padding:16px 20px;font-size:17px;font-weight:700">MailVault · ${esc(heading)}</td></tr>
       ${rows}
       <tr><td style="padding:12px 16px;color:#94a3b8;font-size:12px">Change what you receive under your name → My notification preferences.</td></tr>
     </table></div>`;

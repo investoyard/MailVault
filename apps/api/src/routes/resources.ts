@@ -271,7 +271,7 @@ export async function resourceRoutes(app: FastifyInstance) {
       { header: 'Reason / error', key: 'note', width: 50 },
     ];
     ws.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
-    ws.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4F46E5' } };
+    ws.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF3C2E7E' } };
     ws.getRow(1).commit();
 
     // Excel has no time zones: write wall-clock times in the business time zone.

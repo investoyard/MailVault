@@ -242,7 +242,7 @@ export function AppLayout() {
               </span>
             </Tooltip>
             <Tooltip title={live ? 'Screens update automatically when emails are processed' : 'Live updates paused; data refreshes every 30 seconds'}>
-              <span className="mv-pill" style={{ color: live ? '#4F46E5' : '#94A3B8' }}>
+              <span className="mv-pill" style={{ color: live ? '#3C2E7E' : '#94A3B8' }}>
                 <ThunderboltOutlined /> {live ? 'Live' : 'Polling'}
               </span>
             </Tooltip>
@@ -278,7 +278,7 @@ export function AppLayout() {
               }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
-                <Avatar style={{ background: '#EEF2FF', color: '#4F46E5', fontWeight: 600 }}>
+                <Avatar style={{ background: '#EFECF8', color: '#3C2E7E', fontWeight: 600 }}>
                   {user?.displayName?.[0]?.toUpperCase() ?? 'U'}
                 </Avatar>
                 <div style={{ lineHeight: 1.25 }}>

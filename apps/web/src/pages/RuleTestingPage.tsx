@@ -118,7 +118,7 @@ export function RuleTestingPage() {
       {!data && !search.isPending && !search.isError && (
         <Card className="mv-card">
           <div style={{ textAlign: 'center', padding: '32px 0' }} className="mv-muted">
-            <ExperimentOutlined style={{ fontSize: 28, color: '#4F46E5' }} />
+            <ExperimentOutlined style={{ fontSize: 28, color: '#3C2E7E' }} />
             <div style={{ marginTop: 10 }}>Choose a mailbox and dates, then press Search to see how your rules treat real emails.</div>
           </div>
         </Card>

@@ -78,6 +78,9 @@ if ($LASTEXITCODE -ne 0) { Pop-Location; throw "Database update failed - is the 
 Write-Host "Building the admin panel..."
 & $npm run build:web
 if ($LASTEXITCODE -ne 0) { Pop-Location; throw "Web build failed" }
+Write-Host "Compiling the API for IIS (apps\api\dist)..."
+& $npm run build:api
+if ($LASTEXITCODE -ne 0) { Pop-Location; throw "API build failed" }
 Pop-Location
 
 # Restart the IIS-hosted website so it picks up the new build/code (iisnode watches this file).

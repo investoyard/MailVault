@@ -21,19 +21,19 @@ const html = `<!doctype html><html><head><meta charset="utf-8"><title>${title}</
   @page { size: A4; margin: 18mm 16mm 20mm; }
   * { box-sizing: border-box; }
   body { font-family: 'Segoe UI', Inter, Arial, sans-serif; color: #0f172a; font-size: 10.5pt; line-height: 1.55; }
-  .cover { display: flex; align-items: center; gap: 12px; padding-bottom: 14px; margin-bottom: 18px; border-bottom: 3px solid #4f46e5; }
-  .logo { width: 38px; height: 38px; border-radius: 10px; background: linear-gradient(135deg,#6366f1,#4338ca); color: #fff;
+  .cover { display: flex; align-items: center; gap: 12px; padding-bottom: 14px; margin-bottom: 18px; border-bottom: 3px solid #3C2E7E; }
+  .logo { width: 38px; height: 38px; border-radius: 10px; background: linear-gradient(135deg,#5B47B0,#2E2266); color: #fff;
           display: grid; place-items: center; font-weight: 700; font-size: 18px; }
   .brand { font-weight: 700; font-size: 15pt; } .meta { color: #64748b; font-size: 9pt; }
   h1 { font-size: 20pt; margin: 0 0 6px; letter-spacing: -0.3px; }
-  h2 { font-size: 13.5pt; color: #312e81; margin: 22px 0 8px; padding-top: 8px; border-top: 1px solid #e6e9f0; page-break-after: avoid; }
+  h2 { font-size: 13.5pt; color: #241A52; margin: 22px 0 8px; padding-top: 8px; border-top: 1px solid #e6e9f0; page-break-after: avoid; }
   h3 { font-size: 11.5pt; margin: 16px 0 6px; page-break-after: avoid; }
   p { margin: 6px 0; } ul, ol { margin: 6px 0 6px 20px; padding: 0; } li { margin: 3px 0; }
   code { font-family: Consolas, 'Cascadia Mono', monospace; font-size: 9pt; background: #f1f5f9; padding: 1px 4px; border-radius: 4px; }
   pre { background: #0f172a; color: #e2e8f0; padding: 12px 14px; border-radius: 8px; font-size: 8.6pt; line-height: 1.45;
         white-space: pre-wrap; word-break: break-all; page-break-inside: avoid; }
   pre code { background: none; color: inherit; padding: 0; font-size: inherit; }
-  blockquote { margin: 10px 0; padding: 8px 12px; background: #eef2ff; border-left: 4px solid #4f46e5; border-radius: 4px; color: #312e81; }
+  blockquote { margin: 10px 0; padding: 8px 12px; background: #EFECF8; border-left: 4px solid #3C2E7E; border-radius: 4px; color: #241A52; }
   blockquote p { margin: 0; }
   table { width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 9.5pt; page-break-inside: avoid; }
   th, td { border: 1px solid #e2e8f0; padding: 7px 9px; text-align: left; vertical-align: top; }

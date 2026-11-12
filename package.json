@@ -31,7 +31,8 @@
     "db:seed-demo": "npm run seed-demo -w @mailvault/db --",
     "start:api": "npm run start -w @mailvault/api",
     "start:worker": "npm run start -w @mailvault/worker",
-    "preflight": "tsx apps/worker/src/checks/preflight.ts"
+    "preflight": "tsx apps/worker/src/checks/preflight.ts",
+    "build:api": "npm run build -w @mailvault/api"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

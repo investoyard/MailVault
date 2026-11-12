@@ -251,7 +251,7 @@ export function UsersPage() {
               title: 'User',
               render: (_, u) => (
                 <Space size={12}>
-                  <Avatar style={{ background: u.isActive ? '#EEF2FF' : '#F1F5F9', color: u.isActive ? '#4F46E5' : '#94A3B8', fontWeight: 600 }}>{u.displayName[0]?.toUpperCase()}</Avatar>
+                  <Avatar style={{ background: u.isActive ? '#EFECF8' : '#F1F5F9', color: u.isActive ? '#3C2E7E' : '#94A3B8', fontWeight: 600 }}>{u.displayName[0]?.toUpperCase()}</Avatar>
                   <div>
                     <div style={{ fontWeight: 600 }}>
                       {u.displayName} {u.id === me?.id && <Tag style={{ marginLeft: 4 }}>You</Tag>}

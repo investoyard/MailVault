@@ -1,8 +1,8 @@
 import type { ThemeConfig } from 'antd';
 
 export const palette = {
-  primary: '#4F46E5',
-  primarySoft: '#EEF2FF',
+  primary: '#3C2E7E',
+  primarySoft: '#EFECF8',
   success: '#16A34A',
   successSoft: '#F0FDF4',
   warning: '#D97706',
@@ -56,9 +56,9 @@ export const theme: ThemeConfig = {
       iconSize: 16,
     },
     Card: { headerFontSize: 15, paddingLG: 20 },
-    Table: { headerBg: '#F8FAFC', headerColor: '#475569', rowHoverBg: '#F8FAFF', cellPaddingBlock: 12 },
+    Table: { headerBg: '#F8FAFC', headerColor: '#475569', rowHoverBg: '#FAF9FD', cellPaddingBlock: 12 },
     Tag: { defaultBg: palette.neutralSoft },
-    Button: { fontWeight: 500, primaryShadow: '0 1px 2px rgba(79, 70, 229, 0.25)' },
+    Button: { fontWeight: 500, primaryShadow: '0 1px 2px rgba(60, 46, 126, 0.25)' },
     Statistic: { contentFontSize: 26 },
   },
 };

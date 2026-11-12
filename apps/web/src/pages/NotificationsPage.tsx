@@ -76,7 +76,7 @@ export function NotificationsPage() {
             const [icon, fg, bg] = ICON[n.severity];
             return (
               <List.Item
-                style={{ cursor: n.link ? 'pointer' : 'default', background: n.readAt ? undefined : '#FAFBFF', paddingInline: 12, borderRadius: 8 }}
+                style={{ cursor: n.link ? 'pointer' : 'default', background: n.readAt ? undefined : '#FAF9FD', paddingInline: 12, borderRadius: 8 }}
                 onClick={() => n.link && navigate(n.link)}
                 extra={<span className="mv-muted" title={fmtDateTime(n.createdAt)}>{fromNow(n.createdAt)}</span>}
               >

@@ -71,7 +71,7 @@ export async function adminRoutes(app: FastifyInstance) {
       { header: 'After', key: 'after', width: 60 },
     ];
     ws.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
-    ws.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4F46E5' } };
+    ws.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF3C2E7E' } };
     ws.getRow(1).commit();
     let cursor: string | undefined;
     let written = 0;

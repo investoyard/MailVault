@@ -459,7 +459,7 @@ export function RuleEditor({ open, rule, onClose }: { open: boolean; rule: RuleR
 
         <Col xs={24} lg={9}>
           <div style={{ position: 'sticky', top: 0 }}>
-            <Card className="mv-card" size="small" title={<Space><BulbOutlined style={{ color: '#4F46E5' }} />Rule summary</Space>} styles={{ body: { padding: 18 } }}>
+            <Card className="mv-card" size="small" title={<Space><BulbOutlined style={{ color: '#3C2E7E' }} />Rule summary</Space>} styles={{ body: { padding: 18 } }}>
               <ul style={{ paddingLeft: 18, margin: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {summary.map((l) => (
                   <li key={l}>{l}</li>

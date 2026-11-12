@@ -214,7 +214,7 @@ export function IntegrationsPage() {
               title: 'Integration',
               render: (_, h) => (
                 <Space size={12}>
-                  <div style={{ width: 36, height: 36, borderRadius: 10, background: '#EEF2FF', color: '#4F46E5', display: 'grid', placeItems: 'center' }}>
+                  <div style={{ width: 36, height: 36, borderRadius: 10, background: '#EFECF8', color: '#3C2E7E', display: 'grid', placeItems: 'center' }}>
                     <ApiOutlined />
                   </div>
                   <div style={{ minWidth: 0 }}>

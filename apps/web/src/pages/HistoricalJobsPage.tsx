@@ -133,7 +133,7 @@ export function HistoricalJobsPage() {
                   {j.status === 'COMPLETED' ? (
                     <Progress percent={100} size="small" showInfo={false} />
                   ) : j.status === 'RUNNING' ? (
-                    <Progress percent={100} status="active" size="small" showInfo={false} strokeColor="#A5B4FC" />
+                    <Progress percent={100} status="active" size="small" showInfo={false} strokeColor="#B9AEE8" />
                   ) : null}
                   <span className="mv-muted" style={{ fontSize: 12.5 }}>
                     {fmtNumber(j.scanned)} scanned · {fmtNumber(j.matched)} matched{!j.simulate && ` · ${fmtNumber(j.downloaded)} files queued`}

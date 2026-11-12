@@ -25,7 +25,7 @@ cd D:\Claude\MailVault
 powershell -ExecutionPolicy Bypass -File scripts\install-service.ps1
 ```
 
-This applies database updates, builds the admin panel, stops development copies, and registers the
+This applies database updates, builds the admin panel, compiles the API for IIS, stops development copies, and registers the
 **MailVault-Worker** task (starts at boot, restarts if it stops). It ends with *MailVault Worker is running*.
 
 > Network-share destinations: run the Worker as a domain account with rights on the shares:
