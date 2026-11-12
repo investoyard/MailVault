@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { Button, Card, Col, Progress, Row, Segmented, Skeleton, Table, Tooltip, Typography } from 'antd';
+import { Button, Card, Col, Progress, Row, Segmented, Select, Skeleton, Table, Tooltip, Typography } from 'antd';
 import {
   CheckCircleOutlined,
   ClockCircleOutlined,
@@ -52,9 +52,11 @@ interface Summary {
 export function DashboardPage() {
   const navigate = useNavigate();
   const [days, setDays] = useState(14);
+  const [mailboxId, setMailboxId] = useState<string | undefined>();
+  const mailboxList = useQuery({ queryKey: ['mailboxes'], queryFn: () => api.get<{ id: string; email: string }[]>('/api/mailboxes') });
   const q = useQuery({
-    queryKey: ['dashboard', days],
-    queryFn: () => api.get<Summary>(`/api/dashboard/summary?days=${days}`),
+    queryKey: ['dashboard', days, mailboxId],
+    queryFn: () => api.get<Summary>(`/api/dashboard/summary?days=${days}${mailboxId ? `&mailboxId=${mailboxId}` : ""}`),
     refetchInterval: 30_000,
   });
   const d = q.data;
@@ -68,9 +70,12 @@ export function DashboardPage() {
         title="Dashboard"
         subtitle={`Overview of email processing · updated ${q.dataUpdatedAt ? fromNow(new Date(q.dataUpdatedAt)) : '…'}`}
         extra={
+          <>
+          <Select allowClear placeholder="All mailboxes" style={{ width: 260 }} value={mailboxId} onChange={setMailboxId} options={(mailboxList.data ?? []).map((m) => ({ value: m.id, label: m.email }))} />
           <Button icon={<ReloadOutlined />} onClick={() => q.refetch()} loading={q.isFetching}>
             Refresh
           </Button>
+          </>
         }
       />
 

@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { Card, Input, Select, Table, Tabs, Tag, Typography } from 'antd';
-import { SearchOutlined } from '@ant-design/icons';
+import { Button, Card, DatePicker, Input, Select, Table, Tabs, Tag, Typography } from 'antd';
+import { FileExcelOutlined, SearchOutlined } from '@ant-design/icons';
+import type { Dayjs } from 'dayjs';
 import { api, qs } from '../api';
 import { EmptyState, PageHeader } from '../components/ui';
 import { fmtDateTime, fmtNumber } from '../format';
@@ -33,15 +34,52 @@ const LEVEL_COLOR: Record<string, string> = { error: 'red', warn: 'orange', info
 function AuditTab() {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
+  const [userId, setUserId] = useState<string | undefined>();
+  const [action, setAction] = useState<string | undefined>();
+  const [range, setRange] = useState<[Dayjs, Dayjs] | null>(null);
+  const filters = {
+    search,
+    userId,
+    action,
+    from: range?.[0]?.startOf('day').toISOString(),
+    to: range?.[1]?.endOf('day').toISOString(),
+  };
   const q = useQuery({
-    queryKey: ['audit', page, search],
-    queryFn: () => api.get<{ total: number; rows: AuditRow[] }>(`/api/logs/audit${qs({ page, pageSize: 50, search })}`),
+    queryKey: ['audit', page, filters],
+    queryFn: () => api.get<{ total: number; rows: AuditRow[] }>(`/api/logs/audit${qs({ page, pageSize: 50, ...filters })}`),
     placeholderData: (p) => p,
   });
+  const users = useQuery({ queryKey: ['users'], queryFn: () => api.get<{ id: string; displayName: string }[]>('/api/users'), retry: false });
+  const actions = useQuery({ queryKey: ['audit-actions'], queryFn: () => api.get<{ action: string; count: number }[]>('/api/logs/audit/actions') });
+  const reset = (fn: () => void) => {
+    fn();
+    setPage(1);
+  };
   return (
     <>
       <div className="mv-filter-bar">
-        <Input.Search allowClear placeholder="Search action or entity" style={{ width: 300 }} onSearch={(v) => { setSearch(v); setPage(1); }} enterButton={<SearchOutlined />} />
+        <Input.Search allowClear placeholder="Search action, entity or ID" style={{ width: 260 }} onSearch={(v) => reset(() => setSearch(v))} enterButton={<SearchOutlined />} />
+        <Select
+          allowClear
+          placeholder="Any user"
+          style={{ width: 200 }}
+          value={userId}
+          onChange={(v) => reset(() => setUserId(v))}
+          options={[{ value: 'system', label: 'System (automatic)' }, ...(users.data ?? []).map((u) => ({ value: u.id, label: u.displayName }))]}
+        />
+        <Select
+          allowClear
+          showSearch
+          placeholder="Any action"
+          style={{ width: 240 }}
+          value={action}
+          onChange={(v) => reset(() => setAction(v))}
+          options={(actions.data ?? []).map((a) => ({ value: a.action, label: `${a.action} (${a.count})` }))}
+        />
+        <DatePicker.RangePicker value={range} onChange={(v) => reset(() => setRange(v as [Dayjs, Dayjs] | null))} />
+        <Button icon={<FileExcelOutlined />} href={`/api/logs/audit/export${qs(filters)}`} disabled={!q.data?.total}>
+          Export to Excel
+        </Button>
       </div>
       <Table
         className="mv-table"

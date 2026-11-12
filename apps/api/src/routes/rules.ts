@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { prisma } from '@mailvault/db';
 import { ruleInputSchema, type RuleInput } from '@mailvault/shared';
-import { requirePermission } from '../auth.js';
+import { assertMailbox, requirePermission } from '../auth.js';
 import { audit } from './resources.js';
 
 const idParam = z.object({ id: z.string().min(1) });
@@ -28,6 +28,7 @@ function toData(input: RuleInput) {
 export async function ruleRoutes(app: FastifyInstance) {
   app.get('/rules/:id', { preHandler: requirePermission('rules') }, async (req) => {
     const { id } = idParam.parse(req.params);
+    assertMailbox(req, (await prisma.rule.findUniqueOrThrow({ where: { id } })).mailboxId);
     return prisma.rule.findUniqueOrThrow({
       where: { id },
       include: { mailbox: { select: { email: true } }, versions: { orderBy: { version: 'desc' }, take: 20, select: { version: true, createdAt: true, changedById: true } } },
@@ -36,6 +37,7 @@ export async function ruleRoutes(app: FastifyInstance) {
 
   app.post('/rules', { preHandler: requirePermission('rules', 'create') }, async (req, reply) => {
     const input = ruleInputSchema.parse(req.body);
+    assertMailbox(req, input.mailboxId);
     const clash = await prisma.rule.findFirst({ where: { mailboxId: input.mailboxId, name: input.name } });
     if (clash) return reply.code(409).send({ error: 'A rule with this name already exists for this mailbox' });
 
@@ -53,6 +55,8 @@ export async function ruleRoutes(app: FastifyInstance) {
     const { id } = idParam.parse(req.params);
     const input = ruleInputSchema.parse(req.body);
     const before = await prisma.rule.findUniqueOrThrow({ where: { id } });
+    assertMailbox(req, before.mailboxId);
+    assertMailbox(req, input.mailboxId);
     const clash = await prisma.rule.findFirst({ where: { mailboxId: input.mailboxId, name: input.name, id: { not: id } } });
     if (clash) return reply.code(409).send({ error: 'A rule with this name already exists for this mailbox' });
 

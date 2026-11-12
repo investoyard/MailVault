@@ -32,6 +32,8 @@ model User {
   role          Role      @default(VIEWER)
   permissions   Json?     // optional overrides of the role template
   isActive      Boolean   @default(true)
+  mustChangePassword Boolean @default(false)
+  notificationPrefs  Json?    // { email: bool, teams: bool, digest: "instant"|"daily"|"off", types: string[] }
   lastLoginAt   DateTime?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
@@ -363,6 +365,7 @@ model Notification {
   message    String
   alertKey   String?       // same key = same open alert (no spam)
   resolvedAt DateTime?
+  dispatchedAt DateTime? // email/Teams delivery done (or not needed)
   link       String?
   createdAt  DateTime      @default(now())
 

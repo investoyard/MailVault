@@ -13,7 +13,7 @@ import {
   type HistoricalJobMsg,
   type ManualDownloadJob,
 } from '@mailvault/shared';
-import { requirePermission } from '../auth.js';
+import { assertMailbox, mailboxScope, requirePermission } from '../auth.js';
 import { getQueue } from '../queue.js';
 import { audit } from './resources.js';
 
@@ -44,6 +44,7 @@ export async function testingRoutes(app: FastifyInstance) {
     const q = searchSchema.parse(req.body);
     if (!graphReady()) return reply.code(400).send({ error: 'Microsoft 365 is not configured yet (see docs/ENTRA-SETUP.md), so live emails cannot be searched.' });
 
+    assertMailbox(req, q.mailboxId);
     const mb = await prisma.mailbox.findUniqueOrThrow({ where: { id: q.mailboxId }, include: { folders: true } });
     const saved = await prisma.rule.findMany({ where: { mailboxId: mb.id }, orderBy: [{ priority: 'asc' }, { createdAt: 'asc' }] });
     const rules = [
@@ -147,6 +148,7 @@ export async function testingRoutes(app: FastifyInstance) {
       .object({ mailboxId: z.string().min(1), providerMessageId: z.string().min(1), ruleId: z.string().min(1), attachmentIds: z.array(z.string().min(1)).min(1) })
       .parse(req.body);
     if (!graphReady()) return reply.code(400).send({ error: 'Microsoft 365 is not configured yet.' });
+    assertMailbox(req, body.mailboxId);
     const rule = await prisma.rule.findUniqueOrThrow({ where: { id: body.ruleId } });
     if (rule.mailboxId !== body.mailboxId) return reply.code(400).send({ error: 'The rule belongs to a different mailbox' });
     await (await getQueue()).send(QUEUES.manualDownload, { ...body, userId: req.user.id } satisfies ManualDownloadJob);
@@ -155,8 +157,9 @@ export async function testingRoutes(app: FastifyInstance) {
   });
 
   // ─────────── Historical jobs ───────────
-  app.get('/historical-jobs', { preHandler: requirePermission('ruleTesting') }, async () => {
-    const jobs = await prisma.historicalJob.findMany({ orderBy: { createdAt: 'desc' }, take: 100, include: { mailbox: { select: { email: true } } } });
+  app.get('/historical-jobs', { preHandler: requirePermission('ruleTesting') }, async (req) => {
+    const scope = mailboxScope(req);
+    const jobs = await prisma.historicalJob.findMany({ where: scope ? { mailboxId: { in: scope } } : {}, orderBy: { createdAt: 'desc' }, take: 100, include: { mailbox: { select: { email: true } } } });
     const ruleNames = new Map((await prisma.rule.findMany({ where: { id: { in: jobs.flatMap((j) => j.ruleIds) } }, select: { id: true, name: true } })).map((r) => [r.id, r.name]));
     const users = new Map((await prisma.user.findMany({ select: { id: true, displayName: true } })).map((u) => [u.id, u.displayName]));
     return jobs.map((j) => ({
@@ -179,6 +182,7 @@ export async function testingRoutes(app: FastifyInstance) {
       })
       .refine((v) => new Date(v.dateFrom) < new Date(v.dateTo), 'The start date must be before the end date')
       .parse(req.body);
+    assertMailbox(req, b.mailboxId);
     if (!graphReady()) return reply.code(400).send({ error: 'Microsoft 365 is not configured yet.' });
     const running = await prisma.historicalJob.count({ where: { mailboxId: b.mailboxId, status: { in: ['QUEUED', 'RUNNING'] } } });
     if (running) return reply.code(409).send({ error: 'A historical job is already running for this mailbox. Wait for it or cancel it first.' });
@@ -190,6 +194,7 @@ export async function testingRoutes(app: FastifyInstance) {
 
   app.post('/historical-jobs/:id/cancel', { preHandler: requirePermission('ruleTesting', 'execute') }, async (req, reply) => {
     const { id } = z.object({ id: z.string() }).parse(req.params);
+    assertMailbox(req, (await prisma.historicalJob.findUniqueOrThrow({ where: { id } })).mailboxId);
     const { count } = await prisma.historicalJob.updateMany({ where: { id, status: { in: ['QUEUED', 'RUNNING'] } }, data: { status: 'CANCELLED', finishedAt: new Date() } });
     if (!count) return reply.code(400).send({ error: 'Only queued or running jobs can be cancelled' });
     await audit(req.user.id, 'HISTORICAL_JOB_CANCELLED', 'HistoricalJob', id, null, null, req.ip);
@@ -198,6 +203,7 @@ export async function testingRoutes(app: FastifyInstance) {
 
   app.post('/historical-jobs/:id/resume', { preHandler: requirePermission('ruleTesting', 'execute') }, async (req, reply) => {
     const { id } = z.object({ id: z.string() }).parse(req.params);
+    assertMailbox(req, (await prisma.historicalJob.findUniqueOrThrow({ where: { id } })).mailboxId);
     const { count } = await prisma.historicalJob.updateMany({ where: { id, status: { in: ['CANCELLED', 'FAILED'] } }, data: { status: 'QUEUED', finishedAt: null } });
     if (!count) return reply.code(400).send({ error: 'Only cancelled or failed jobs can be resumed' });
     await (await getQueue()).send(QUEUES.historical, { jobId: id } satisfies HistoricalJobMsg);

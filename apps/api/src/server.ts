@@ -15,6 +15,8 @@ import { adminRoutes } from './routes/admin.js';
 import { ruleRoutes } from './routes/rules.js';
 import { testingRoutes } from './routes/testing.js';
 import { eventRoutes } from './events.js';
+import { userRoutes } from './routes/users.js';
+import { startWatchdog } from './watchdog.js';
 import { stopQueue } from './queue.js';
 
 const app = Fastify({
@@ -51,6 +53,7 @@ await app.register(adminRoutes, { prefix: '/api' });
 await app.register(ruleRoutes, { prefix: '/api' });
 await app.register(testingRoutes, { prefix: '/api' });
 await app.register(eventRoutes, { prefix: '/api' });
+await app.register(userRoutes, { prefix: '/api' });
 
 // Production: serve the built React app and fall back to index.html for client routes.
 const webDist = resolve(ROOT, 'apps/web/dist');
@@ -71,4 +74,5 @@ const shutdown = async () => {
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
 
+startWatchdog(app);
 await app.listen({ port: env.port, host: env.host });

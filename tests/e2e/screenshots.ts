@@ -89,6 +89,14 @@ await page.getByRole('button', { name: 'New historical job' }).first().click();
 await page.waitForTimeout(800);
 await page.screenshot({ path: resolve(out, '24-historical-new.png') });
 
+// Users: edit drawer with permissions
+await page.goto(base + '/users');
+await page.waitForLoadState('networkidle');
+await page.getByRole('button', { name: 'Add user' }).click();
+await page.waitForTimeout(800);
+await page.screenshot({ path: resolve(out, '26-user-drawer.png') });
+await page.keyboard.press('Escape');
+
 // History: row selection for bulk retry + email details
 await page.goto(base + '/history?status=FAILED');
 await page.waitForLoadState('networkidle');

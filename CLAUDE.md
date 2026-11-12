@@ -87,4 +87,7 @@ npx tsx scripts/md-to-pdf.ts <file.md> [out.pdf]  # styled PDF of a doc via Edge
 - Phase 0 (foundation): done. Entra app registration + share service account pending with IT (docs/ENTRA-SETUP.md).
 - Phase 1 (core engine): engine, pipeline, rule editor done; SSO + delegated mailbox sign-in wait for the Entra app. See README "Phase status".
 - Phase 2 (admin experience): Rule Testing, historical jobs, history export/details/save-copy/bulk retry, live updates done; per-mailbox dashboard filter open.
+- Phase 3 (governance): users/roles/permission overrides, mailbox scoping, email/Teams alerts + prefs + digest, watchdog, cert-expiry, cleanup, audit export done.
+- Access control: requireAuth loads role/permissions/mailboxIds from DB per request (10 s cache, invalidateAccess on change). Use mailboxScope()/assertMailbox() in every route touching mailbox data.
+- Alerts/delivery live in packages/db/src/ops.ts (raiseAlert, resolveAlert, dispatchPending, sendDailyDigest); API watchdog (apps/api/src/watchdog.ts) also dispatches so alerts go out when the worker is down.
 - Live updates: worker calls notifyChange() -> pg_notify('mailvault_events') -> API /api/events (SSE) -> web invalidates queries.

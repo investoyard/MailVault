@@ -1,7 +1,7 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { App, Button, Card, Col, Form, InputNumber, Row, Select, Skeleton, Space, Switch } from 'antd';
-import { SaveOutlined } from '@ant-design/icons';
+import { Alert, App, Button, Card, Col, Form, Input, InputNumber, Row, Select, Skeleton, Space, Switch } from 'antd';
+import { SaveOutlined, SendOutlined } from '@ant-design/icons';
 import { DEFAULT_BLOCKED_EXTENSIONS } from '@mailvault/shared';
 import { api } from '../api';
 import { useAuth } from '../auth';
@@ -32,6 +32,21 @@ export function SettingsPage() {
   useEffect(() => {
     if (q.data) form.setFieldsValue(toForm(q.data));
   }, [q.data, form]);
+
+  const [testTo, setTestTo] = useState("");
+  const [testing, setTesting] = useState(false);
+  const sendTest = async () => {
+    setTesting(true);
+    try {
+      const smtp = form.getFieldValue("notifications__smtp");
+      const r = await api.post<{ message: string }>("/api/settings/test-email", { to: testTo.trim(), smtp: { enabled: true, port: 587, secure: false, user: "", ...smtp } });
+      message.success(r.message);
+    } catch (e) {
+      message.error((e as Error).message);
+    } finally {
+      setTesting(false);
+    }
+  };
 
   const save = useMutation({
     mutationFn: (v: Settings) => api.put<{ ok?: boolean; error?: string }>('/api/settings', fromForm(v)),
@@ -167,13 +182,64 @@ export function SettingsPage() {
         )}
 
         {section(
-          'Notifications',
-          'In-app alerts are always on. Email and Teams delivery arrive in Phase 3.',
-          <Space direction="vertical">
-            <Form.Item name="notifications__dailyDigest" label="Daily processing summary" valuePropName="checked" style={{ marginBottom: 0 }}>
+          'Email alerts (SMTP)',
+          'In-app alerts are always on. Email goes to each user’s address, following their own preferences (instant or daily summary).',
+          <>
+            <Row gutter={16}>
+              <Col xs={24}>
+                <Form.Item name={['notifications__smtp', 'enabled']} label="Send alert emails" valuePropName="checked">
+                  <Switch />
+                </Form.Item>
+              </Col>
+              <Col xs={24} md={12}>
+                <Form.Item name={['notifications__smtp', 'host']} label="SMTP server">
+                  <Input placeholder="smtp.office365.com or your mail relay" />
+                </Form.Item>
+              </Col>
+              <Col xs={12} md={6}>
+                <Form.Item name={['notifications__smtp', 'port']} label="Port">
+                  <InputNumber min={1} max={65535} style={{ width: '100%' }} />
+                </Form.Item>
+              </Col>
+              <Col xs={12} md={6}>
+                <Form.Item name={['notifications__smtp', 'secure']} label="SSL/TLS on connect" valuePropName="checked" tooltip="On for port 465. Port 587 uses STARTTLS automatically.">
+                  <Switch />
+                </Form.Item>
+              </Col>
+              <Col xs={24} md={12}>
+                <Form.Item name={['notifications__smtp', 'user']} label="Username" tooltip="Leave empty for an internal relay without sign-in. The password goes in .env as SMTP_PASSWORD.">
+                  <Input placeholder="mailvault@company.com" autoComplete="off" />
+                </Form.Item>
+              </Col>
+              <Col xs={24} md={12}>
+                <Form.Item name={['notifications__smtp', 'from']} label="From address">
+                  <Input placeholder="MailVault <mailvault@company.com>" />
+                </Form.Item>
+              </Col>
+            </Row>
+            <Space.Compact style={{ width: '100%', maxWidth: 520 }}>
+              <Input placeholder="Send a test email to…" value={testTo} onChange={(e) => setTestTo(e.target.value)} />
+              <Button icon={<SendOutlined />} loading={testing} onClick={sendTest} disabled={!testTo}>
+                Send test
+              </Button>
+            </Space.Compact>
+          </>,
+        )}
+
+        {section(
+          'Microsoft Teams',
+          'Posts warnings, errors and recoveries to a Teams channel.',
+          <>
+            <Form.Item name="notifications__teams__enabled" label="Post alerts to Teams" valuePropName="checked">
               <Switch />
             </Form.Item>
-          </Space>,
+            <Alert
+              type="info"
+              showIcon
+              message="One-time setup"
+              description="In the Teams channel: ⋯ → Workflows → “Post to a channel when a webhook request is received”. Copy the URL into .env as TEAMS_WEBHOOK_URL and restart MailVault."
+            />
+          </>,
         )}
       </Form>
     </>

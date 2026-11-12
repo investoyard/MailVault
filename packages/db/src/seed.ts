@@ -17,6 +17,8 @@ const defaults: Record<string, unknown> = {
   'history.retentionDays': 730,
   'logs.autoCleanup': true,
   'notifications.dailyDigest': true,
+  'notifications.smtp': { enabled: false, host: '', port: 587, secure: false, user: '', from: '' },
+  'notifications.teams.enabled': false,
 };
 
 async function main() {

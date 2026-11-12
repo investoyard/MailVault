@@ -89,7 +89,20 @@ powershell -ExecutionPolicy Bypass -File scripts\setup-iis.ps1 -HostName mailvau
 | History: Excel export (streamed), email details with live body, save a copy (path-guarded), bulk retry, status filter from links | Done |
 | Live updates (Postgres LISTEN/NOTIFY → server-sent events → screens refresh) | Done |
 | Low-disk-space alerts for destination folders | Done |
-| Per-mailbox dashboard filter | Not started |
+| Per-mailbox dashboard filter | Done |
+
+**Phase 3 – Governance & operations:**
+
+| Item | Status |
+|---|---|
+| Users: add / edit / disable, reset password, forced password change, self-service password change | Done |
+| Roles + per-user permission overrides (module × action), Super Admin lock-out protection | Done |
+| Mailbox scoping: users only see their assigned mailboxes in every screen and API (dashboard, rules, history, tests, jobs, exports) | Done, live-tested |
+| Access re-checked on every request (disabled users / role changes apply within ~10 s) | Done |
+| Alerts by email (SMTP) and Teams, per-user preferences (instant / daily summary / off, minimum severity), test email | Done (needs SMTP details / Teams webhook to go live) |
+| Watchdog: "processing service stopped" raised by the API; repeated-failure alert; certificate-expiry alert (30 days) | Done, integration-tested |
+| Nightly retention cleanup (keeps the per-rule match ledger so nothing re-downloads), audited | Done, integration-tested |
+| Audit trail filters (user, action, date) + Excel export | Done |
 
 Integration tests: `npm run test:integration -w @mailvault/worker` (uses database `mailvault_test`).
 PDF of any doc: `npx tsx scripts/md-to-pdf.ts docs/ENTRA-SETUP.md`.

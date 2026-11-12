@@ -10,6 +10,8 @@ interface Status {
   database: { ok: boolean; size: string };
   workers: { instanceId: string; hostname: string; version: string; pid: number; memoryMb: number; startedAt: string; lastBeatAt: string; online: boolean }[];
   graphConfigured: boolean;
+  certificate: { subject?: string; expires?: string; daysLeft?: number; error?: string } | null;
+  notifications: { email: boolean; teams: boolean };
 }
 
 const uptime = (s: number) => (s < 3600 ? `${Math.round(s / 60)} min` : s < 86400 ? `${(s / 3600).toFixed(1)} h` : `${(s / 86400).toFixed(1)} days`);
@@ -60,6 +62,27 @@ export function SystemStatusPage() {
           <StatCard label="Microsoft 365" value={s?.graphConfigured ? 'Configured' : 'Not set up'} icon={<WindowsOutlined />} tone={s?.graphConfigured ? 'success' : 'warning'} foot="Microsoft Graph · Mail.Read" />
         </Col>
       </Row>
+
+      <Card className="mv-card" title="Security & alerts" style={{ marginTop: 16 }}>
+        <Descriptions size="small" bordered column={{ xs: 1, lg: 3 }}>
+          <Descriptions.Item label="Microsoft 365 certificate">
+            {!s?.certificate ? (
+              <span className="mv-muted">Not configured</span>
+            ) : s.certificate.error ? (
+              <Tag color="red">{s.certificate.error}</Tag>
+            ) : (
+              <>
+                <Tag color={(s.certificate.daysLeft ?? 0) <= 7 ? 'red' : (s.certificate.daysLeft ?? 0) <= 30 ? 'orange' : 'green'}>
+                  {(s.certificate.daysLeft ?? 0) < 0 ? 'Expired' : `${s.certificate.daysLeft} days left`}
+                </Tag>
+                <span className="mv-muted">expires {fmtDateTime(s.certificate.expires)}</span>
+              </>
+            )}
+          </Descriptions.Item>
+          <Descriptions.Item label="Email alerts">{s?.notifications.email ? <Tag color="green">On</Tag> : <Tag>Off</Tag>}</Descriptions.Item>
+          <Descriptions.Item label="Teams alerts">{s?.notifications.teams ? <Tag color="green">On</Tag> : <Tag>Off</Tag>}</Descriptions.Item>
+        </Descriptions>
+      </Card>
 
       <Card className="mv-card" title="Worker instances" style={{ marginTop: 16 }}>
         {!s?.workers.length ? (

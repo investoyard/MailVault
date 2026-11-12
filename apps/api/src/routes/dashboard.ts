@@ -1,38 +1,32 @@
 import type { FastifyInstance } from 'fastify';
-import { prisma } from '@mailvault/db';
+import { prisma, Prisma } from '@mailvault/db';
 import { env } from '../env.js';
-import { requirePermission } from '../auth.js';
+import { mailboxScope, requirePermission } from '../auth.js';
 
 const ACTIVE_STATUSES = ['PENDING', 'IN_PROGRESS', 'RETRYING', 'WAITING_DESTINATION'] as const;
 
 export async function dashboardRoutes(app: FastifyInstance) {
   app.get('/summary', { preHandler: requirePermission('dashboard') }, async (req) => {
-    const days = Math.min(90, Math.max(7, Number((req.query as { days?: string }).days ?? 14)));
+    const query = req.query as { days?: string; mailboxId?: string };
+    const days = Math.min(90, Math.max(7, Number(query.days ?? 14)));
     const tz = env.timeZone;
+    // Respect the user's mailbox access, optionally narrowed to one mailbox.
+    const ids = mailboxScope(req, query.mailboxId || null);
+    const mbIn = ids ? { in: ids } : undefined;
+    const sqlMb = (col: Prisma.Sql) => (ids === undefined ? Prisma.empty : ids.length ? Prisma.sql`AND ${col} IN (${Prisma.join(ids)})` : Prisma.sql`AND false`);
 
-    // Start of "today" in the business time zone.
     const [today] = await prisma.$queryRaw<{ start: Date }[]>`
       SELECT (date_trunc('day', now() AT TIME ZONE ${tz}) AT TIME ZONE ${tz}) AS start`;
     const start = today?.start ?? new Date(new Date().setHours(0, 0, 0, 0));
 
-    const [
-      emailsScanned,
-      emailsMatched,
-      byStatus,
-      todayByStatus,
-      unevaluated,
-      todayScanned,
-    ] = await Promise.all([
-      prisma.message.count({ where: { evaluatedAt: { not: null } } }),
-      prisma.message.count({ where: { matches: { some: {} } } }),
-      prisma.attachmentDownload.groupBy({ by: ['status'], _count: { _all: true } }),
-      prisma.attachmentDownload.groupBy({
-        by: ['status'],
-        where: { updatedAt: { gte: start } },
-        _count: { _all: true },
-      }),
-      prisma.message.count({ where: { evaluatedAt: null } }),
-      prisma.message.count({ where: { firstSeenAt: { gte: start } } }),
+    const dlWhere: Prisma.AttachmentDownloadWhereInput = ids ? { match: { message: { mailboxId: mbIn } } } : {};
+    const [emailsScanned, emailsMatched, byStatus, todayByStatus, unevaluated, todayScanned] = await Promise.all([
+      prisma.message.count({ where: { evaluatedAt: { not: null }, mailboxId: mbIn } }),
+      prisma.message.count({ where: { matches: { some: {} }, mailboxId: mbIn } }),
+      prisma.attachmentDownload.groupBy({ by: ['status'], where: dlWhere, _count: { _all: true } }),
+      prisma.attachmentDownload.groupBy({ by: ['status'], where: { ...dlWhere, updatedAt: { gte: start } }, _count: { _all: true } }),
+      prisma.message.count({ where: { evaluatedAt: null, mailboxId: mbIn } }),
+      prisma.message.count({ where: { firstSeenAt: { gte: start }, mailboxId: mbIn } }),
     ]);
 
     const count = (rows: typeof byStatus, ...statuses: string[]) =>
@@ -42,19 +36,22 @@ export async function dashboardRoutes(app: FastifyInstance) {
       WITH d AS (
         SELECT to_char(gs, 'YYYY-MM-DD') AS day
         FROM generate_series((now() AT TIME ZONE ${tz})::date - (${days}::int - 1), (now() AT TIME ZONE ${tz})::date, '1 day') gs
+      ),
+      a AS (
+        SELECT dl.status, to_char((dl."updatedAt" AT TIME ZONE 'UTC') AT TIME ZONE ${tz}, 'YYYY-MM-DD') AS day
+        FROM "AttachmentDownload" dl
+        JOIN "MessageRuleMatch" m ON m.id = dl."matchId"
+        JOIN "Message" msg ON msg.id = m."messageId"
+        WHERE dl."updatedAt" >= (now() AT TIME ZONE 'UTC') - make_interval(days => (${days}::int + 1)) ${sqlMb(Prisma.sql`msg."mailboxId"`)}
       )
       SELECT d.day,
-        COALESCE(SUM(CASE WHEN a.status = 'SUCCESS' THEN 1 END), 0)::int AS success,
-        COALESCE(SUM(CASE WHEN a.status = 'FAILED'  THEN 1 END), 0)::int AS failed,
-        COALESCE(SUM(CASE WHEN a.status = 'SKIPPED' THEN 1 END), 0)::int AS skipped
-      FROM d
-      LEFT JOIN "AttachmentDownload" a
-        ON to_char((a."updatedAt" AT TIME ZONE 'UTC') AT TIME ZONE ${tz}, 'YYYY-MM-DD') = d.day
+        COUNT(a.status) FILTER (WHERE a.status = 'SUCCESS')::int AS success,
+        COUNT(a.status) FILTER (WHERE a.status = 'FAILED')::int  AS failed,
+        COUNT(a.status) FILTER (WHERE a.status = 'SKIPPED')::int AS skipped
+      FROM d LEFT JOIN a ON a.day = d.day
       GROUP BY d.day ORDER BY d.day`;
 
-    const ruleStats = await prisma.$queryRaw<
-      { ruleId: string; ruleName: string; mailbox: string; success: number; failed: number; skipped: number }[]
-    >`
+    const ruleStats = await prisma.$queryRaw<{ ruleId: string; ruleName: string; mailbox: string; success: number; failed: number; skipped: number }[]>`
       SELECT r.id AS "ruleId", r.name AS "ruleName", mb.email AS mailbox,
         COUNT(*) FILTER (WHERE a.status = 'SUCCESS')::int AS success,
         COUNT(*) FILTER (WHERE a.status = 'FAILED')::int  AS failed,
@@ -63,11 +60,13 @@ export async function dashboardRoutes(app: FastifyInstance) {
       JOIN "Mailbox" mb ON mb.id = r."mailboxId"
       LEFT JOIN "MessageRuleMatch" m ON m."ruleId" = r.id
       LEFT JOIN "AttachmentDownload" a ON a."matchId" = m.id
+      WHERE true ${sqlMb(Prisma.sql`r."mailboxId"`)}
       GROUP BY r.id, r.name, mb.email
       ORDER BY success DESC, r.name
       LIMIT 8`;
 
     const recent = await prisma.attachmentDownload.findMany({
+      where: dlWhere,
       orderBy: { updatedAt: 'desc' },
       take: 8,
       select: {
@@ -78,21 +77,18 @@ export async function dashboardRoutes(app: FastifyInstance) {
         skipReason: true,
         updatedAt: true,
         attachment: { select: { name: true, sizeBytes: true } },
-        match: {
-          select: {
-            rule: { select: { name: true } },
-            message: { select: { fromEmail: true, subject: true, mailbox: { select: { email: true } } } },
-          },
-        },
+        match: { select: { rule: { select: { name: true } }, message: { select: { fromEmail: true, subject: true, mailbox: { select: { email: true } } } } } },
       },
     });
 
     const [mailboxes, destinations, heartbeat] = await Promise.all([
       prisma.mailbox.findMany({
+        where: { id: mbIn },
         orderBy: { email: 'asc' },
         select: { id: true, email: true, displayName: true, status: true, enabled: true, lastSyncAt: true, lastError: true },
       }),
       prisma.destination.findMany({
+        where: ids ? { rules: { some: { mailboxId: mbIn } } } : {},
         orderBy: { name: 'asc' },
         select: { id: true, name: true, basePath: true, status: true, freeSpaceMb: true, lastCheckedAt: true },
       }),

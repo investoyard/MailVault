@@ -54,7 +54,7 @@ export async function authRoutes(app: FastifyInstance) {
       secure: env.cookieSecure,
       maxAge: 10 * 60 * 60,
     });
-    return { user: session, permissions: permissionsFor(user.role, user.permissions) };
+    return { user: session, permissions: permissionsFor(user.role, user.permissions), mustChangePassword: user.mustChangePassword };
   });
 
   app.post('/logout', async (_req, reply) => {
@@ -64,6 +64,6 @@ export async function authRoutes(app: FastifyInstance) {
 
   app.get('/me', { preHandler: requireAuth }, async (req) => {
     const user = await prisma.user.findUnique({ where: { id: req.user.id } });
-    return { user: req.user, permissions: permissionsFor(req.user.role, user?.permissions) };
+    return { user: { ...req.user, role: req.access.role }, permissions: req.access.permissions, mustChangePassword: user?.mustChangePassword ?? false };
   });
 }

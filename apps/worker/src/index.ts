@@ -14,6 +14,8 @@ import { dueMailboxes, syncMailbox } from './pipeline/sync.js';
 import { processDownloads, recoverStuckDownloads } from './pipeline/download.js';
 import { runHistoricalJob, runManualDownload } from './pipeline/historical.js';
 import { notifyChange } from './pipeline/alerts.js';
+import { dispatchPending, sendDailyDigest } from '@mailvault/db';
+import { checkCertificate, checkRepeatedFailures, runCleanup } from './jobs/maintenance.js';
 
 const version = (JSON.parse(readFileSync(resolve(ROOT, 'package.json'), 'utf8')) as { version: string }).version;
 const instanceId = `${hostname()}-${process.pid}-${randomUUID().slice(0, 8)}`;
@@ -51,6 +53,10 @@ async function main() {
   await boss.createQueue(QUEUES.folderHealth);
   await boss.createQueue(QUEUES.historical);
   await boss.createQueue(QUEUES.manualDownload);
+  await boss.createQueue('maintenance-nightly');
+  await boss.createQueue('daily-digest');
+  await boss.schedule('maintenance-nightly', '15 2 * * *', {}, { tz: env.timeZone });
+  await boss.schedule('daily-digest', '0 8 * * *', {}, { tz: env.timeZone });
 
   await boss.schedule(QUEUES.syncScheduler, '* * * * *', {}, { tz: env.timeZone });
   await boss.schedule(QUEUES.folderHealth, '*/5 * * * *', {}, { tz: env.timeZone });
@@ -65,7 +71,21 @@ async function main() {
       }
     }
     await boss.send(QUEUES.processDownloads, {}, { singletonKey: 'all' }); // retries that became due
+    await checkRepeatedFailures().catch((err) => log.warn({ err }, 'failure check failed'));
+    const sent = await dispatchPending().catch((err) => (log.warn({ err }, 'notification delivery failed'), 0));
+    if (sent) log.info({ sent }, 'alert emails sent');
   });
+
+  await boss.work('maintenance-nightly', async () => {
+    const r = await runCleanup();
+    log.info({ cleanup: r }, 'nightly cleanup done');
+    await checkCertificate();
+  });
+  await boss.work('daily-digest', async () => {
+    const n = await sendDailyDigest();
+    if (n) log.info({ sent: n }, 'daily summaries sent');
+  });
+  await checkCertificate();
 
   await boss.work<SyncJob>(QUEUES.syncMailbox, { localConcurrency: 4 }, async ([job]) => {
     if (!job) return;

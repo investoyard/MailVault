@@ -4,7 +4,7 @@ import { checkFolder } from '@mailvault/core/node';
 import { prisma, type Prisma } from '@mailvault/db';
 import { destinationInputSchema, mailboxInputSchema, DOWNLOAD_STATUSES, QUEUES, type SyncJob } from '@mailvault/shared';
 import { M365Provider, explainGraphError, graphConfigFromEnv, GraphError } from '@mailvault/m365';
-import { requirePermission } from '../auth.js';
+import { assertMailbox, invalidateAccess, mailboxScope, requirePermission } from '../auth.js';
 import { getQueue } from '../queue.js';
 
 const graphReady = () => Boolean(process.env.M365_TENANT_ID?.trim() && process.env.M365_CLIENT_ID?.trim());
@@ -13,8 +13,10 @@ const idParam = z.object({ id: z.string().min(1) });
 
 export async function resourceRoutes(app: FastifyInstance) {
   // ─────────── Mailboxes ───────────
-  app.get('/mailboxes', { preHandler: requirePermission('accounts') }, async () => {
+  app.get('/mailboxes', { preHandler: requirePermission('accounts') }, async (req) => {
+    const scope = mailboxScope(req);
     const rows = await prisma.mailbox.findMany({
+      where: scope ? { id: { in: scope } } : {},
       orderBy: { email: 'asc' },
       include: { _count: { select: { rules: true, messages: true } }, folders: { select: { displayName: true } } },
     });
@@ -30,6 +32,11 @@ export async function resourceRoutes(app: FastifyInstance) {
         folders: { create: { providerFolderId: 'inbox', displayName: 'Inbox' } },
       },
     });
+    // Non-super-admins automatically get access to the mailbox they add.
+    if (req.access.mailboxIds !== null) {
+      await prisma.userMailboxAccess.create({ data: { userId: req.user.id, mailboxId: mailbox.id } });
+      invalidateAccess(req.user.id);
+    }
     await audit(req.user.id, 'MAILBOX_CREATED', 'Mailbox', mailbox.id, null, input, req.ip);
     return mailbox;
   });
@@ -37,6 +44,7 @@ export async function resourceRoutes(app: FastifyInstance) {
   app.patch('/mailboxes/:id', { preHandler: requirePermission('accounts', 'edit') }, async (req) => {
     const { id } = idParam.parse(req.params);
     const patch = mailboxInputSchema.partial().parse(req.body);
+    assertMailbox(req, id);
     const before = await prisma.mailbox.findUniqueOrThrow({ where: { id } });
     const data: Prisma.MailboxUpdateInput = {
       ...patch,
@@ -51,6 +59,7 @@ export async function resourceRoutes(app: FastifyInstance) {
 
   app.post('/mailboxes/:id/test', { preHandler: requirePermission('accounts', 'execute') }, async (req) => {
     const { id } = idParam.parse(req.params);
+    assertMailbox(req, id);
     const mailbox = await prisma.mailbox.findUniqueOrThrow({ where: { id } });
     let result;
     try {
@@ -78,6 +87,7 @@ export async function resourceRoutes(app: FastifyInstance) {
 
   app.post('/mailboxes/:id/sync', { preHandler: requirePermission('accounts', 'execute') }, async (req, reply) => {
     const { id } = idParam.parse(req.params);
+    assertMailbox(req, id);
     const mb = await prisma.mailbox.findUniqueOrThrow({ where: { id } });
     if (!mb.enabled) return reply.code(400).send({ error: 'Monitoring is paused for this mailbox. Enable it first.' });
     if (!graphReady()) return reply.code(400).send({ error: 'Microsoft 365 is not configured yet (see docs/ENTRA-SETUP.md).' });
@@ -89,6 +99,7 @@ export async function resourceRoutes(app: FastifyInstance) {
 
   app.get('/mailboxes/:id/folders', { preHandler: requirePermission('accounts') }, async (req, reply) => {
     const { id } = idParam.parse(req.params);
+    assertMailbox(req, id);
     const mb = await prisma.mailbox.findUniqueOrThrow({ where: { id }, include: { folders: true } });
     const monitored = mb.folders.map((f) => ({ id: f.providerFolderId, displayName: f.displayName, lastSyncAt: f.lastSyncAt }));
     if (!graphReady()) return { available: null, monitored, error: 'Microsoft 365 is not configured yet, so folders cannot be listed.' };
@@ -102,6 +113,7 @@ export async function resourceRoutes(app: FastifyInstance) {
 
   app.put('/mailboxes/:id/folders', { preHandler: requirePermission('accounts', 'edit') }, async (req) => {
     const { id } = idParam.parse(req.params);
+    assertMailbox(req, id);
     const { folders } = z.object({ folders: z.array(z.object({ id: z.string().min(1), displayName: z.string().min(1) })).min(1) }).parse(req.body);
     const existing = await prisma.mailboxFolder.findMany({ where: { mailboxId: id } });
     const keep = new Set(folders.map((f) => f.id));
@@ -152,8 +164,10 @@ export async function resourceRoutes(app: FastifyInstance) {
   });
 
   // ─────────── Rules ───────────
-  app.get('/rules', { preHandler: requirePermission('rules') }, async () => {
+  app.get('/rules', { preHandler: requirePermission('rules') }, async (req) => {
+    const scope = mailboxScope(req);
     const rules = await prisma.rule.findMany({
+      where: scope ? { mailboxId: { in: scope } } : {},
       orderBy: [{ mailbox: { email: 'asc' } }, { priority: 'asc' }],
       include: {
         mailbox: { select: { email: true } },
@@ -167,6 +181,7 @@ export async function resourceRoutes(app: FastifyInstance) {
   app.patch('/rules/:id/enabled', { preHandler: requirePermission('rules', 'edit') }, async (req) => {
     const { id } = idParam.parse(req.params);
     const { enabled } = z.object({ enabled: z.boolean() }).parse(req.body);
+    assertMailbox(req, (await prisma.rule.findUniqueOrThrow({ where: { id } })).mailboxId);
     const rule = await prisma.rule.update({ where: { id }, data: { enabled } });
     await audit(req.user.id, enabled ? 'RULE_ENABLED' : 'RULE_DISABLED', 'Rule', id, null, { enabled }, req.ip);
     return rule;
@@ -175,7 +190,8 @@ export async function resourceRoutes(app: FastifyInstance) {
   // ─────────── Retry / manual download ───────────
   app.post('/history/:id/retry', { preHandler: requirePermission('history', 'execute') }, async (req, reply) => {
     const { id } = idParam.parse(req.params);
-    const d = await prisma.attachmentDownload.findUniqueOrThrow({ where: { id } });
+    const d = await prisma.attachmentDownload.findUniqueOrThrow({ where: { id }, include: { match: { select: { message: { select: { mailboxId: true } } } } } });
+    assertMailbox(req, d.match.message.mailboxId);
     if (!['FAILED', 'WAITING_DESTINATION', 'RETRYING', 'AWAITING_MANUAL'].includes(d.status)) {
       return reply.code(400).send({ error: 'Only failed, waiting or manual downloads can be retried' });
     }
@@ -202,13 +218,13 @@ export async function resourceRoutes(app: FastifyInstance) {
     to: z.iso.datetime().optional(),
   });
 
-  const historyWhere = (q: z.infer<typeof historyQuery>): Prisma.AttachmentDownloadWhereInput => ({
+  const historyWhere = (q: z.infer<typeof historyQuery>, scope?: string[]): Prisma.AttachmentDownloadWhereInput => ({
     status: q.status,
     attachment: q.fileName ? { name: { contains: q.fileName, mode: 'insensitive' } } : undefined,
     match: {
       ruleId: q.ruleId,
       message: {
-        mailboxId: q.mailboxId,
+        mailboxId: scope ? { in: scope } : undefined,
         fromEmail: q.sender ? { contains: q.sender, mode: 'insensitive' } : undefined,
         subject: q.subject ? { contains: q.subject, mode: 'insensitive' } : undefined,
         receivedAt: q.from || q.to ? { gte: q.from ? new Date(q.from) : undefined, lte: q.to ? new Date(q.to) : undefined } : undefined,
@@ -219,7 +235,7 @@ export async function resourceRoutes(app: FastifyInstance) {
   app.post('/history/retry-bulk', { preHandler: requirePermission('history', 'execute') }, async (req) => {
     const { ids } = z.object({ ids: z.array(z.string().min(1)).min(1).max(500) }).parse(req.body);
     const { count } = await prisma.attachmentDownload.updateMany({
-      where: { id: { in: ids }, status: { in: ['FAILED', 'WAITING_DESTINATION', 'RETRYING'] } },
+      where: { id: { in: ids }, status: { in: ['FAILED', 'WAITING_DESTINATION', 'RETRYING'] }, ...(mailboxScope(req) ? { match: { message: { mailboxId: { in: mailboxScope(req) } } } } : {}) },
       data: { status: 'PENDING', attempts: 0, nextAttemptAt: null, errorCode: null, errorMessage: null },
     });
     if (count) await (await getQueue()).send(QUEUES.processDownloads, {}, { singletonKey: 'all' });
@@ -230,7 +246,7 @@ export async function resourceRoutes(app: FastifyInstance) {
   // Excel export of the current filter (streamed, so large exports don't use much memory).
   app.get('/history/export', { preHandler: requirePermission('history') }, async (req, reply) => {
     const q = historyQuery.parse(req.query);
-    const where = historyWhere(q);
+    const where = historyWhere(q, mailboxScope(req, q.mailboxId));
     const ExcelJS = (await import('exceljs')).default;
     const stamp = new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-');
     reply.raw.writeHead(200, {
@@ -311,6 +327,7 @@ export async function resourceRoutes(app: FastifyInstance) {
       include: { match: { include: { message: { include: { mailbox: true, attachments: true, matches: { include: { rule: { select: { name: true } } } } } } } } },
     });
     const m = d.match.message;
+    assertMailbox(req, m.mailboxId);
     let body: string | null = null;
     let bodyError: string | null = null;
     if (graphReady()) {
@@ -341,6 +358,7 @@ export async function resourceRoutes(app: FastifyInstance) {
   app.get('/history/:id/file', { preHandler: requirePermission('history', 'execute') }, async (req, reply) => {
     const { id } = idParam.parse(req.params);
     const d = await prisma.attachmentDownload.findUniqueOrThrow({ where: { id }, include: { match: { include: { rule: { include: { destination: true } } } } } });
+    assertMailbox(req, d.match.rule.mailboxId);
     if (d.status !== 'SUCCESS' || !d.destinationPath) return reply.code(400).send({ error: 'This file was not saved by MailVault' });
     const { resolve: resolvePath, basename } = await import('node:path');
     const { createReadStream } = await import('node:fs');
@@ -362,7 +380,7 @@ export async function resourceRoutes(app: FastifyInstance) {
 
   app.get('/history', { preHandler: requirePermission('history') }, async (req) => {
     const q = historyQuery.parse(req.query);
-    const where = historyWhere(q);
+    const where = historyWhere(q, mailboxScope(req, q.mailboxId));
     const [total, rows] = await Promise.all([
       prisma.attachmentDownload.count({ where }),
       prisma.attachmentDownload.findMany({

@@ -21,7 +21,9 @@ import {
   TeamOutlined,
   InboxOutlined,
   ThunderboltOutlined,
+  KeyOutlined,
 } from '@ant-design/icons';
+import { ChangePasswordModal, PreferencesModal } from '../components/AccountModals';
 import type { Module } from '@mailvault/shared';
 import { useAuth } from '../auth';
 import { api } from '../api';
@@ -88,7 +90,9 @@ const ROLE_LABEL: Record<string, string> = {
 };
 
 export function AppLayout() {
-  const { user, logout, can } = useAuth();
+  const { user, logout, can, mustChangePassword, passwordChanged } = useAuth();
+  const [pwOpen, setPwOpen] = useState(false);
+  const [prefsOpen, setPrefsOpen] = useState(false);
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const [collapsed, setCollapsed] = useState(false);
@@ -191,9 +195,16 @@ export function AppLayout() {
                     label: ROLE_LABEL[user?.role ?? ''] ?? user?.role,
                   },
                   { type: 'divider' },
+                  { key: 'prefs', icon: <BellOutlined />, label: 'My notification preferences' },
+                  { key: 'password', icon: <KeyOutlined />, label: 'Change password' },
+                  { type: 'divider' },
                   { key: 'logout', icon: <LogoutOutlined />, label: 'Sign out', danger: true },
                 ],
-                onClick: (e) => e.key === 'logout' && void logout(),
+                onClick: (e) => {
+                  if (e.key === 'logout') void logout();
+                  if (e.key === 'password') setPwOpen(true);
+                  if (e.key === 'prefs') setPrefsOpen(true);
+                },
               }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
@@ -214,6 +225,8 @@ export function AppLayout() {
           <div className="mv-content">
             <Outlet />
           </div>
+          <ChangePasswordModal open={mustChangePassword || pwOpen} forced={mustChangePassword} onDone={() => { passwordChanged(); setPwOpen(false); }} />
+          <PreferencesModal open={prefsOpen} onClose={() => setPrefsOpen(false)} />
         </Content>
       </Layout>
     </Layout>
