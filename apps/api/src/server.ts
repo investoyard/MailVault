@@ -129,4 +129,7 @@ process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
 
 startWatchdog(app);
-await app.listen({ port: env.port, host: env.host });
+// Under IIS (iisnode) PORT is a named pipe such as \\.\pipe\abc; when run as a service it is a number.
+const listenOn = process.env.PORT?.trim() ?? String(env.port);
+if (/^\d+$/.test(listenOn)) await app.listen({ port: Number(listenOn), host: env.host });
+else await app.listen({ path: listenOn });

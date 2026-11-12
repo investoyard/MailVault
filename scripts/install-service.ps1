@@ -1,39 +1,47 @@
 #Requires -RunAsAdministrator
 <#
-  Runs MailVault in the background, always: starts at boot (before anyone logs in) and restarts if it stops.
-  Uses Windows Task Scheduler (same approach as our other apps), so nothing extra needs installing.
+  Runs the MailVault mail Worker in the background, always: starts at boot (before anyone logs in)
+  and restarts if it stops. Uses Windows Task Scheduler (same approach as our other apps).
 
-  Two background tasks are created:
-    MailVault-API     web API + admin panel on http://127.0.0.1:<PORT>, served to users through IIS
-    MailVault-Worker  mailbox sync and downloads. It MUST run as an account that can write to the
-                      destination network shares, e.g. a domain service account or gMSA.
+  Default (website hosted by IIS through iisnode, see iisnode\setup-iis.ps1):
+    MailVault-Worker  mailbox sync, downloads, retries, alerts, nightly cleanup. It must keep running even
+                      when nobody uses the website, so it is a background task, not part of IIS.
+                      It MUST run as an account that can write to the destination network shares.
 
+  -IncludeApi (alternative: IIS only as reverse proxy, see iis\web.config):
+    also registers MailVault-API on http://127.0.0.1:<PORT>.
+
+    powershell -ExecutionPolicy Bypass -File scripts\install-service.ps1
     powershell -ExecutionPolicy Bypass -File scripts\install-service.ps1 -WorkerAccount "CORP\svc-mailvault$"   # gMSA
     powershell -ExecutionPolicy Bypass -File scripts\install-service.ps1 -WorkerAccount "CORP\svc-mailvault" -WorkerPassword (Read-Host -AsSecureString)
+    powershell -ExecutionPolicy Bypass -File scripts\install-service.ps1 -IncludeApi
     powershell -ExecutionPolicy Bypass -File scripts\install-service.ps1 -Uninstall
-  Logs: logs\api.log, logs\worker.log
+  Logs: logs\worker.log (and logs\api.log with -IncludeApi)
 #>
 param(
   [switch]$Uninstall,
+  [switch]$IncludeApi,
   [string]$WorkerAccount = "SYSTEM",
   [SecureString]$WorkerPassword
 )
 $ErrorActionPreference = "Stop"
 $root = Split-Path $PSScriptRoot -Parent
-$tasks = @("MailVault-API", "MailVault-Worker")
 
 $port = 3200
 $line = Select-String -Path (Join-Path $root ".env") -Pattern '^PORT=(\d+)' | Select-Object -First 1
 if ($line) { $port = [int]$line.Matches[0].Groups[1].Value }
 
-if ($Uninstall) {
-  foreach ($t in $tasks) {
-    if (Get-ScheduledTask -TaskName $t -ErrorAction SilentlyContinue) {
-      Stop-ScheduledTask -TaskName $t -ErrorAction SilentlyContinue
-      Unregister-ScheduledTask -TaskName $t -Confirm:$false
-      Write-Host "Removed $t"
-    }
+function Remove-Task([string]$name) {
+  if (Get-ScheduledTask -TaskName $name -ErrorAction SilentlyContinue) {
+    Stop-ScheduledTask -TaskName $name -ErrorAction SilentlyContinue
+    Unregister-ScheduledTask -TaskName $name -Confirm:$false
+    Write-Host "Removed $name"
   }
+}
+
+if ($Uninstall) {
+  Remove-Task "MailVault-API"
+  Remove-Task "MailVault-Worker"
   exit 0
 }
 
@@ -45,15 +53,22 @@ New-Item -ItemType Directory -Force (Join-Path $root "logs") | Out-Null
 $escaped = [regex]::Escape($root)
 $dev = Get-CimInstance Win32_Process -Filter "Name='node.exe'" |
   Where-Object { $_.CommandLine -match $escaped -or $_.CommandLine -match 'MailVault[\\/](apps|node_modules)' } |
-  Where-Object { $_.CommandLine -match 'tsx|vite|server\.ts|src[\\/]index\.ts' }
+  Where-Object { $_.CommandLine -match 'tsx|vite|server\.ts|src[\\/]index\.ts' } |
+  Where-Object { $_.CommandLine -notmatch 'iisnode' }
 foreach ($p in $dev) {
   Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue
 }
 if ($dev) { Write-Host "Stopped $(@($dev).Count) development MailVault process(es)."; Start-Sleep -Seconds 2 }
-$busy = Get-NetTCPConnection -State Listen -LocalPort $port -ErrorAction SilentlyContinue | Select-Object -First 1
-if ($busy) {
-  $owner = Get-CimInstance Win32_Process -Filter "ProcessId=$($busy.OwningProcess)"
-  throw "Port $port is still in use by: $($owner.CommandLine). Free it or change PORT in .env (and in iis\web.config)."
+
+if ($IncludeApi) {
+  $busy = Get-NetTCPConnection -State Listen -LocalPort $port -ErrorAction SilentlyContinue | Select-Object -First 1
+  if ($busy) {
+    $owner = Get-CimInstance Win32_Process -Filter "ProcessId=$($busy.OwningProcess)"
+    throw "Port $port is still in use by: $($owner.CommandLine). Free it or change PORT in .env (and in iis\web.config)."
+  }
+} else {
+  # Website is served by IIS (iisnode) now: an old API task would only duplicate it.
+  Remove-Task "MailVault-API"
 }
 
 Push-Location $root
@@ -64,6 +79,10 @@ Write-Host "Building the admin panel..."
 & $npm run build:web
 if ($LASTEXITCODE -ne 0) { Pop-Location; throw "Web build failed" }
 Pop-Location
+
+# Restart the IIS-hosted website so it picks up the new build/code (iisnode watches this file).
+$restartMarker = Join-Path $root "iisnode\restart.txt"
+if (Test-Path $restartMarker) { Set-Content -Path $restartMarker -Value "restarted $(Get-Date -Format s)" -Encoding ASCII }
 
 $settings = New-ScheduledTaskSettingsSet -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1) `
   -ExecutionTimeLimit ([TimeSpan]::Zero) -StartWhenAvailable -AllowStartIfOnBatteries `
@@ -83,9 +102,8 @@ function Register-App([string]$name, [string]$npmScript, [string]$log, $principa
   Write-Host "Started $name"
 }
 
-# API: no network-share access needed, runs as SYSTEM.
 $sys = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
-Register-App "MailVault-API" "start:api" "api.log" $sys $null $null
+if ($IncludeApi) { Register-App "MailVault-API" "start:api" "api.log" $sys $null $null }
 
 # Worker: needs write access to destination shares.
 if ($WorkerAccount -eq "SYSTEM") {
@@ -100,15 +118,20 @@ if ($WorkerAccount -eq "SYSTEM") {
   Register-App "MailVault-Worker" "start:worker" "worker.log" $null $WorkerAccount $plain
 }
 
-Write-Host "Waiting for the API..."
+# Wait for the Worker's first heartbeat (written to the database within ~30 s of starting).
+Write-Host "Waiting for the Worker to report in..."
+Push-Location $root
 for ($i = 0; $i -lt 30; $i++) {
-  Start-Sleep -Seconds 2
-  try {
-    if ((Invoke-WebRequest "http://127.0.0.1:$port/api/health" -UseBasicParsing -TimeoutSec 3).Content -match '"ok":true') {
-      Write-Host "MailVault is running on http://127.0.0.1:$port (publish it through IIS: scripts\setup-iis.ps1)."
-      Write-Host "Both tasks start automatically after every reboot. Logs: $root\logs"
-      exit 0
-    }
-  } catch {}
+  Start-Sleep -Seconds 3
+  $state = (Get-ScheduledTask -TaskName "MailVault-Worker").State
+  $log = Join-Path $root "logs\worker.log"
+  if ((Test-Path $log) -and (Select-String -Path $log -Pattern 'MailVault worker is running' -Quiet) -and $state -eq 'Running') {
+    Pop-Location
+    Write-Host "MailVault Worker is running (task MailVault-Worker). It starts automatically after every reboot."
+    if ($IncludeApi) { Write-Host "API task: http://127.0.0.1:$port" } else { Write-Host "Website: hosted by IIS through iisnode (iisnode\setup-iis.ps1)." }
+    Write-Host "Logs: $root\logs"
+    exit 0
+  }
 }
-throw "The API didn't answer on port $port within 60 seconds. Check $root\logs\api.log"
+Pop-Location
+throw "The Worker did not report in within 90 seconds. Check $root\logs\worker.log"

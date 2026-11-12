@@ -106,10 +106,9 @@ async function main() {
       return false;
     }
   };
-  for (const name of ['MailVault-API', 'MailVault-Worker']) {
-    const has = task(name);
-    add(has ? 'ok' : 'warn', 'Services', has ? `Background task ${name} registered` : `Background task ${name} not registered yet (scripts\\install-service.ps1)`);
-  }
+  // The website runs in IIS (iisnode); only the Worker is a background task (MailVault-API exists only with -IncludeApi).
+  const hasWorker = task('MailVault-Worker');
+  add(hasWorker ? 'ok' : 'warn', 'Services', hasWorker ? 'Background task MailVault-Worker registered' : 'Background task MailVault-Worker not registered yet (scripts\\install-service.ps1)');
   const backup = task('MailVault-Backup');
   add(backup ? 'ok' : 'fail', 'Backup', backup ? 'Nightly database backup task registered' : 'No nightly database backup task (scripts\\install-backup.ps1)');
 

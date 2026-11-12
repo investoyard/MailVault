@@ -1,0 +1,1 @@
+touch this file after an update to restart the MailVault website

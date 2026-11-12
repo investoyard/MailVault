@@ -1,87 +1,83 @@
-# Publishing MailVault in IIS (manual setup)
+# Publishing MailVault in IIS (iisnode, like HRMSPlus)
 
-MailVault runs as a Node app on `127.0.0.1:3200` (it also serves the admin panel).
-IIS is only the front door: it receives `https://mailvault…` and forwards every request to port 3200.
-**There is nothing to copy:** the IIS site points at the `iis` folder, which contains just `web.config`.
+MailVault has two parts:
+
+| Part | Hosted by | Why |
+|---|---|---|
+| **Website + API** (admin panel) | **IIS through iisnode**, like HRMSPlus / GM Trade | Only needed when someone uses the site |
+| **Mail Worker** (sync, downloads, retries, alerts, cleanup) | **Background task** (`scripts\install-service.ps1`), like AutoCheckAllotment / eKYC | Must keep checking mailboxes 24×7, even with nobody on the website. IIS only runs Node when a request arrives and recycles app pools, so it can't host the Worker reliably. |
 
 | What | Value |
 |---|---|
-| **IIS physical path** | `D:\Claude\MailVault\iis` |
-| Proxy target (in web.config) | `http://127.0.0.1:3200` |
-| App pool | *No Managed Code* |
-| Built admin panel | `D:\Claude\MailVault\apps\web\dist` (served by Node, not by IIS) |
+| **IIS physical path** | `D:\Claude\MailVault\iisnode` |
+| Entry file IIS runs | `iisnode\server.cjs` (loads the API; the API also serves the built admin panel) |
+| App pool | `MailVault`, *No Managed Code*, Start mode *AlwaysRunning*, Idle time-out 0 |
+| Built admin panel | `D:\Claude\MailVault\apps\web\dist` |
 
-Server already has IIS, URL Rewrite and Application Request Routing (ARR) installed.
+The server already has IIS, **iisnode**, URL Rewrite and Application Initialization installed.
 
 ---
 
-## Step 1: Start MailVault as background services (PowerShell **as Administrator**)
+## Step 1: Start the mail Worker (PowerShell **as Administrator**)
 
 ```powershell
 cd D:\Claude\MailVault
 powershell -ExecutionPolicy Bypass -File scripts\install-service.ps1
 ```
 
-This applies database updates, builds the admin panel, stops any development copies, and registers
-two tasks that start at boot and restart if they stop: **MailVault-API** (port 3200) and **MailVault-Worker**.
-It ends with `MailVault is running on http://127.0.0.1:3200`.
+This applies database updates, builds the admin panel, stops development copies, and registers the
+**MailVault-Worker** task (starts at boot, restarts if it stops). It ends with *MailVault Worker is running*.
 
-> Network-share destinations need the Worker to run as a domain account with rights on the shares:
+> Network-share destinations: run the Worker as a domain account with rights on the shares:
 > add `-WorkerAccount "CORP\svc-mailvault$"` (gMSA) or `-WorkerAccount "CORP\svc-mailvault" -WorkerPassword (Read-Host -AsSecureString)`.
-> Local folders work with the default (SYSTEM).
 
-Check: open `http://127.0.0.1:3200` on the server → MailVault sign-in page.
+## Step 2: Create the website
 
-## Step 2: Allow IIS to act as a proxy (once per server; skip if your other apps already work this way)
+### Option A: one command (recommended; same as HRMSPlus's setup-iis.ps1)
 
-IIS Manager → click the **server name** (top of the tree):
+```powershell
+powershell -ExecutionPolicy Bypass -File iisnode\setup-iis.ps1 -HostName mailvault.company.local
+```
+(or `-Port 8085` without a host name). It creates the app pool and site with the settings below and grants
+the app pool read access to the code and write access to `logs`.
 
-1. **Application Request Routing Cache** → *Server Proxy Settings…* (right) → tick **Enable proxy** → *Apply*.
-2. **URL Rewrite** → *View Server Variables…* (right) → *Add…* → `HTTP_X_FORWARDED_PROTO` → OK; *Add…* → `HTTP_X_FORWARDED_HOST` → OK.
-
-## Step 3: Create the site
+### Option B: manually in IIS Manager
 
 1. **Application Pools** → *Add Application Pool…* → Name `MailVault`, .NET CLR version **No Managed Code** → OK.
+   Then *Advanced Settings…* on the pool: **Start Mode = AlwaysRunning**, **Idle Time-out = 0**,
+   **Regular Time Interval (Recycling) = 0**.
 2. **Sites** → *Add Website…*
-   - Site name: `MailVault`
-   - Application pool: `MailVault`
-   - **Physical path: `D:\Claude\MailVault\iis`**
-   - Binding: **https**, port 443, host name e.g. `mailvault.company.local`, SSL certificate: choose yours
-     *(no certificate yet? see "HTTP only" below)*
-   - OK.
-3. Optional: add a second binding **http**, port 80, same host name. The web.config redirects it to https automatically.
-4. Add the DNS name (`mailvault.company.local`) pointing to this server (IT / DNS admin).
+   - Site name `MailVault`, application pool `MailVault`
+   - **Physical path `D:\Claude\MailVault\iisnode`**
+   - Binding: http, port 80, host name `mailvault.company.local` (or https + certificate, see step 4)
+3. Site → *Advanced Settings…* → **Preload Enabled = True** (starts Node with IIS instead of on the first visit).
+4. Folder permissions (PowerShell as Administrator):
+   ```powershell
+   icacls D:\Claude\MailVault /grant "IIS AppPool\MailVault:(OI)(CI)RX" /T /Q
+   icacls D:\Claude\MailVault\logs /grant "IIS AppPool\MailVault:(OI)(CI)M" /T /Q
+   ```
+5. DNS: point `mailvault.company.local` to this server (IT / DNS admin).
 
-### HTTP only (no certificate yet)
+## Step 3: Tell MailVault its public address
 
-Use binding **http / port 80**, then switch to the HTTP-only config (the normal one forces HTTPS):
-
-```powershell
-copy /Y D:\Claude\MailVault\iis\web.http-only.config D:\Claude\MailVault\iis\web.config
-```
-
-Switch back to HTTPS as soon as you have a certificate: `git checkout iis/web.config` (or restore the file), bind the certificate, then do step 4.
-
-## Step 4: Tell MailVault its public address
-
-Edit `D:\Claude\MailVault\.env`:
-
+`D:\Claude\MailVault\.env`:
 ```ini
-APP_URL=https://mailvault.company.local
-COOKIE_SECURE=true        # only when the site is served over https
+APP_URL=http://mailvault.company.local     # https://… once a certificate is bound
+COOKIE_SECURE=false                         # true only with https
 ```
+Then restart the website: edit/save `D:\Claude\MailVault\iisnode\restart.txt` (iisnode restarts Node), or recycle the `MailVault` app pool.
 
-Then restart the API task (PowerShell as Administrator):
+## Step 4: HTTPS (when you have a certificate)
 
-```powershell
-Stop-ScheduledTask MailVault-API; Start-ScheduledTask MailVault-API
-```
+1. Site → *Bindings…* → *Add* → https, port 443, host name, choose the certificate.
+2. In `iisnode\web.config` change the *Force HTTPS* rule to `enabled="true"`.
+3. `.env`: `APP_URL=https://mailvault.company.local`, `COOKIE_SECURE=true`; touch `iisnode\restart.txt`.
 
 ## Step 5: Check
 
-1. Browse to `https://mailvault.company.local` → sign-in page, padlock without warning.
-2. Sign in → Dashboard; **System Status** shows the API, processing service and database green.
-3. Open **Download Rules**, refresh the page (F5): it must reload the same page (not a 404).
+1. Browse to the site → sign-in page.
+2. Sign in → **System Status**: API, processing service (Worker) and database green.
+3. Open **Download Rules** and press F5: the same page reloads.
 4. On the server: `npm run preflight` lists anything still missing for go-live.
 
 ## Updating later
@@ -90,17 +86,26 @@ Stop-ScheduledTask MailVault-API; Start-ScheduledTask MailVault-API
 cd D:\Claude\MailVault
 git pull
 npm install
-powershell -ExecutionPolicy Bypass -File scripts\install-service.ps1   # migrates, rebuilds, restarts
+powershell -ExecutionPolicy Bypass -File scripts\install-service.ps1   # migrates, rebuilds, restarts Worker + website
 ```
-IIS needs no change for updates.
+The installer also touches `iisnode\restart.txt`, so IIS restarts the website on the next request.
 
 ## Troubleshooting
 
 | Symptom | Cause / fix |
 |---|---|
-| **502.3 Bad Gateway** | The Node app is not running: `Get-ScheduledTask MailVault-API`, check `logs\api.log`, run step 1 again |
-| **404 / IIS default page** | Wrong physical path (must be `D:\Claude\MailVault\iis`) or URL Rewrite missing |
-| **500.50 URL Rewrite error** | Server variables not allowed (step 2.2) |
-| **Redirects to https and fails** | No certificate bound: use the HTTP-only config |
-| **Sign-in says "Request blocked"** | `APP_URL` doesn't match the address in the browser; fix `.env` and restart the API task |
-| **Signed in, then immediately signed out** | `COOKIE_SECURE=true` while browsing over http; set it to `false` or use https |
+| **500 / "iisnode encountered an error"** | Read the newest file in `D:\Claude\MailVault\logs\iisnode`. Common: app pool can't read the folder (step 2B.4) or `.env` missing |
+| **404 / IIS default page** | Physical path must be `D:\Claude\MailVault\iisnode`; URL Rewrite installed? |
+| **System Status: processing service offline** | The Worker task isn't running: `Get-ScheduledTask MailVault-Worker`, `logs\worker.log`, run step 1 again |
+| **Live badge says "Polling"** | `flushResponse="true"` must stay in `iisnode\web.config` |
+| **Sign-in says "Request blocked"** | `APP_URL` doesn't match the address in the browser; fix `.env`, touch `restart.txt` |
+| **Signed in, then immediately signed out** | `COOKIE_SECURE=true` while browsing over http |
+
+---
+
+### Alternative: IIS as reverse proxy only
+
+If you prefer the Node API as its own background task (like AutoCheckAllotment), use physical path
+`D:\Claude\MailVault\iis` (or `iis\web.http-only.config` without a certificate), enable ARR *Server Proxy*,
+allow the server variables `HTTP_X_FORWARDED_PROTO` and `HTTP_X_FORWARDED_HOST`, and install with
+`scripts\install-service.ps1 -IncludeApi`.

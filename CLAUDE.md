@@ -18,7 +18,7 @@ notifications, users/roles and audit logs. Runs on the company's Windows Server 
 - Web: React 19 + Vite 7 + **Ant Design 5** (+ `@ant-design/v5-patch-for-react-19`) + TanStack Query + Recharts
 - Validation: **zod 4** schemas in `packages/shared`, used by API and web
 - Tests: Vitest; UI screenshots via `playwright-core` with the installed **Edge** (`channel: 'msedge'`)
-- Hosting: IIS reverse proxy -> Node on 127.0.0.1:3200; background apps via Windows Task Scheduler
+- Hosting: website/API in IIS via **iisnode** (site path iisnode/, entry iisnode/server.cjs, PORT = named pipe); Worker as Windows Task Scheduler task (scripts/install-service.ps1). Alternative: IIS reverse proxy (iis/) + install-service -IncludeApi
 
 ## Layout
 
