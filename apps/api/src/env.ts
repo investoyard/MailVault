@@ -21,7 +21,11 @@ export const env = {
   port: Number(process.env.PORT ?? 3200),
   host: process.env.HOST ?? '127.0.0.1',
   cookieSecure: process.env.COOKIE_SECURE === 'true',
-  jwtSecret: required('JWT_SECRET'),
+  jwtSecret: (() => {
+    const s = required('JWT_SECRET');
+    if (s.length < 32) throw new Error('JWT_SECRET is too short (min 32 characters). Run: npm run gen-keys');
+    return s;
+  })(),
   timeZone: process.env.BUSINESS_TIMEZONE ?? 'Asia/Kolkata',
   logLevel: process.env.LOG_LEVEL ?? 'info',
 };

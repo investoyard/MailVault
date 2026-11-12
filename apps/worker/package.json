@@ -9,7 +9,8 @@
     "typecheck": "tsc --noEmit -p .",
     "check:graph": "tsx src/checks/graph.ts",
     "check:share": "tsx src/checks/share.ts",
-    "test:integration": "vitest run --config vitest.integration.config.ts"
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "loadtest": "tsx test/load.ts"
   },
   "dependencies": {
     "@mailvault/core": "0.1.0",

@@ -30,7 +30,8 @@
     "create-admin": "npm run create-admin -w @mailvault/api --",
     "db:seed-demo": "npm run seed-demo -w @mailvault/db --",
     "start:api": "npm run start -w @mailvault/api",
-    "start:worker": "npm run start -w @mailvault/worker"
+    "start:worker": "npm run start -w @mailvault/worker",
+    "preflight": "tsx apps/worker/src/checks/preflight.ts"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
@@ -42,5 +43,8 @@
   },
   "engines": {
     "node": ">=24"
+  },
+  "overrides": {
+    "uuid": "^11.1.1"
   }
 }

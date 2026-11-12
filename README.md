@@ -104,5 +104,18 @@ powershell -ExecutionPolicy Bypass -File scripts\setup-iis.ps1 -HostName mailvau
 | Nightly retention cleanup (keeps the per-rule match ledger so nothing re-downloads), audited | Done, integration-tested |
 | Audit trail filters (user, action, date) + Excel export | Done |
 
+**Phase 4 – Hardening & go-live:**
+
+| Item | Status |
+|---|---|
+| Dependency audit: nodemailer 10, @fastify/static 10.1.10, uuid 11 (Prisma CLI accepted, see docs/SECURITY.md) | Done |
+| Security headers + CSP, cross-site request guard, log redaction, password/secret policies | Done, verified on the production build |
+| `npm run preflight` go-live readiness check | Done |
+| Nightly verified backup (`scripts/backup-db.ps1`, `install-backup.ps1`) + restore check (`restore-db.ps1`) | Done, backup + restore drill passed |
+| Failure drills (crash mid-download, share offline, throttling) | Done, automated tests |
+| Load test (`npm run loadtest -w @mailvault/worker`): 20 mailboxes × 250 emails | Pass: 5,000 emails, 4,500 files, 0 duplicates, 331 MB peak |
+| Docs: GO-LIVE checklist + UAT, SECURITY, ADMIN-GUIDE, USER-GUIDE (+ PDFs in docs/) | Done |
+| Install services / IIS / backup task on this server, pilot | **Waiting for IT items + your go-ahead** |
+
 Integration tests: `npm run test:integration -w @mailvault/worker` (uses database `mailvault_test`).
 PDF of any doc: `npx tsx scripts/md-to-pdf.ts docs/ENTRA-SETUP.md`.

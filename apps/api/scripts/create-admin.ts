@@ -9,8 +9,8 @@ if (!username || !password) {
   console.error('Usage: npm run create-admin -- <username> <password> ["Display Name"]');
   process.exit(1);
 }
-if (password.length < 10) {
-  console.error('Use a password of at least 10 characters.');
+if (password.length < 10 || !/[a-zA-Z]/.test(password) || !/\d/.test(password)) {
+  console.error('Use a password of at least 10 characters with letters and numbers.');
   process.exit(1);
 }
 

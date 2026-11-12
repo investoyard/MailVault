@@ -46,6 +46,8 @@ npm run db:migrate -- --name <name>          # after editing schema.prisma (dev)
 npm run db:deploy | db:seed | db:seed-demo [-- --clear]
 npm run check:graph -- user@company.com      # M365 access check
 npm run check:share -- "\\server\share"      # write-access check
+npm run preflight [-- --graph]               # go-live readiness check (exit 1 = blockers)
+npm run loadtest -w @mailvault/worker        # load test on mailvault_test
 npx tsx tests/e2e/screenshots.ts [outDir]    # screenshots of every page (needs api + web running)
 npx tsx scripts/md-to-pdf.ts <file.md> [out.pdf]  # styled PDF of a doc via Edge
 ```
@@ -88,6 +90,8 @@ npx tsx scripts/md-to-pdf.ts <file.md> [out.pdf]  # styled PDF of a doc via Edge
 - Phase 1 (core engine): engine, pipeline, rule editor done; SSO + delegated mailbox sign-in wait for the Entra app. See README "Phase status".
 - Phase 2 (admin experience): Rule Testing, historical jobs, history export/details/save-copy/bulk retry, live updates done; per-mailbox dashboard filter open.
 - Phase 3 (governance): users/roles/permission overrides, mailbox scoping, email/Teams alerts + prefs + digest, watchdog, cert-expiry, cleanup, audit export done.
+- Phase 4 (hardening): CSP/headers + Origin guard in apps/api/src/server.ts, npm run preflight, backup/restore scripts, drills + load test, docs/GO-LIVE.md, SECURITY.md, ADMIN-GUIDE.md, USER-GUIDE.md. Remaining: install on server + pilot (needs IT).
+- Windows PowerShell 5.1 strips double quotes from native args: pass SQL to psql via a temp file (-f), as restore-db.ps1 does.
 - Access control: requireAuth loads role/permissions/mailboxIds from DB per request (10 s cache, invalidateAccess on change). Use mailboxScope()/assertMailbox() in every route touching mailbox data.
 - Alerts/delivery live in packages/db/src/ops.ts (raiseAlert, resolveAlert, dispatchPending, sendDailyDigest); API watchdog (apps/api/src/watchdog.ts) also dispatches so alerts go out when the worker is down.
 - Live updates: worker calls notifyChange() -> pg_notify('mailvault_events') -> API /api/events (SSE) -> web invalidates queries.

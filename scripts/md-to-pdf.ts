@@ -41,7 +41,7 @@ const html = `<!doctype html><html><head><meta charset="utf-8"><title>${title}</
   hr { border: none; border-top: 1px solid #e6e9f0; margin: 18px 0; }
   strong { font-weight: 650; }
 </style></head><body>
-<div class="cover"><div class="logo">M</div><div><div class="brand">MailVault</div><div class="meta">Setup guide · ${today}</div></div></div>
+<div class="cover"><div class="logo">M</div><div><div class="brand">MailVault</div><div class="meta">Documentation · ${today}</div></div></div>
 ${body}
 </body></html>`;
 

@@ -20,8 +20,50 @@ import { startWatchdog } from './watchdog.js';
 import { stopQueue } from './queue.js';
 
 const app = Fastify({
-  logger: { level: env.logLevel },
+  logger: {
+    level: env.logLevel,
+    // Never write session cookies, credentials or passwords to log files.
+    redact: { paths: ['req.headers.cookie', 'req.headers.authorization', 'res.headers["set-cookie"]', '*.password', '*.passwordHash', '*.current', '*.next'], censor: '[hidden]' },
+  },
   trustProxy: true, // behind IIS
+  bodyLimit: 1_048_576,
+});
+
+// Security headers on every response (IIS adds HSTS on the HTTPS front door).
+const CSP = [
+  "default-src 'self'",
+  "script-src 'self'",
+  "style-src 'self' 'unsafe-inline'", // Ant Design injects component styles at runtime
+  "img-src 'self' data:",
+  "font-src 'self' data:",
+  "connect-src 'self'",
+  "frame-ancestors 'none'",
+  "base-uri 'self'",
+  "form-action 'self'",
+  "object-src 'none'",
+].join('; ');
+app.addHook('onSend', async (_req, reply) => {
+  reply.header('X-Content-Type-Options', 'nosniff');
+  reply.header('X-Frame-Options', 'DENY');
+  reply.header('Referrer-Policy', 'same-origin');
+  reply.header('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  reply.header('Cross-Origin-Opener-Policy', 'same-origin');
+  reply.header('Content-Security-Policy', CSP);
+  if (String(reply.getHeader('content-type') ?? '').includes('application/json')) reply.header('Cache-Control', 'no-store');
+});
+
+// Cross-site request guard: state-changing requests must come from MailVault's own pages.
+// (The session cookie is also SameSite=Strict; this is defence in depth.)
+app.addHook('onRequest', async (req, reply) => {
+  if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') return;
+  const origin = req.headers.origin;
+  if (!origin) return; // non-browser clients (scripts, tests) send no Origin
+  const host = (req.headers['x-forwarded-host'] as string | undefined) ?? req.headers.host;
+  try {
+    if (new URL(origin).host !== host) return reply.code(403).send({ error: 'Request blocked: it did not come from MailVault' });
+  } catch {
+    return reply.code(403).send({ error: 'Request blocked' });
+  }
 });
 
 await app.register(cookie);
