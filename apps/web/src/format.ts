@@ -4,6 +4,12 @@ import relativeTime from 'dayjs/plugin/relativeTime';
 dayjs.extend(relativeTime);
 
 export const fmtDateTime = (v?: string | Date | null) => (v ? dayjs(v).format('DD MMM YYYY, HH:mm') : '—');
+/** Compact date for dense tables: "12 Nov, 09:41" this year, "12 Nov 2025" otherwise. */
+export const fmtShort = (v?: string | Date | null) => {
+  if (!v) return '—';
+  const d = dayjs(v);
+  return d.year() === dayjs().year() ? d.format('DD MMM, HH:mm') : d.format('DD MMM YYYY');
+};
 export const fmtDate = (v?: string | Date | null) => (v ? dayjs(v).format('DD MMM YYYY') : '—');
 export const fromNow = (v?: string | Date | null) => (v ? dayjs(v).fromNow() : 'never');
 

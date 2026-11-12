@@ -221,13 +221,13 @@ export function IntegrationsPage() {
                     <div style={{ fontWeight: 600 }}>
                       {h.name} {!h.enabled && <Tag>Paused</Tag>}
                     </div>
-                    <Typography.Text className="mv-mono mv-muted" ellipsis style={{ maxWidth: 380, display: 'block' }}>{h.url}</Typography.Text>
+                    <Typography.Text className="mv-mono mv-muted" ellipsis={{ tooltip: h.url }} style={{ maxWidth: 'min(380px, 26vw)', display: 'block' }}>{h.url}</Typography.Text>
                   </div>
                 </Space>
               ),
             },
             { title: 'Events', render: (_, h) => h.events.map((e) => <Tag key={e} className="mv-mono">{e}</Tag>) },
-            { title: 'Scope', responsive: ['xl'], render: (_, h) => <span className="mv-muted">{h.mailboxIds.length ? `${h.mailboxIds.length} mailbox(es)` : 'All mailboxes'}{h.ruleIds.length ? ` · ${h.ruleIds.length} rule(s)` : ''}</span> },
+            { title: 'Scope', responsive: ['xxl'], render: (_, h) => <span className="mv-muted">{h.mailboxIds.length ? `${h.mailboxIds.length} mailbox(es)` : 'All mailboxes'}{h.ruleIds.length ? ` · ${h.ruleIds.length} rule(s)` : ''}</span> },
             {
               title: 'Last 24 h',
               render: (_, h) => (

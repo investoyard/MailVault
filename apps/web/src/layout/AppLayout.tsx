@@ -223,7 +223,7 @@ export function AppLayout() {
         />
       </Sider>
 
-      <Layout>
+      <Layout className="mv-main">
         <Header className="mv-header">
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <Button

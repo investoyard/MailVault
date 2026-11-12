@@ -176,7 +176,24 @@ body {
   background: rgba(255, 255, 255, 0.92) !important;
 }
 
+/* The area right of the sidebar can shrink below its content's natural width (flex default is min-width:auto). */
+.mv-main {
+  min-width: 0;
+}
+
+/* Any table that is still wider than its card scrolls inside the card, not the whole page. */
+.ant-table-wrapper,
+.ant-table,
+.ant-table-container {
+  max-width: 100%;
+}
+
+.ant-table-content {
+  overflow-x: auto;
+}
+
 .mv-content {
+  min-width: 0;
   padding: 24px;
   max-width: 1480px;
   width: 100%;

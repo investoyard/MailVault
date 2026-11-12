@@ -10,7 +10,7 @@ import type { Dayjs } from 'dayjs';
 import { DOWNLOAD_STATUSES, DOWNLOAD_STATUS_LABELS, type DownloadStatus } from '@mailvault/shared';
 import { api, qs } from '../api';
 import { DownloadStatusTag, EmptyState, PageHeader } from '../components/ui';
-import { fmtBytes, fmtDateTime, fmtNumber } from '../format';
+import { fmtBytes, fmtDateTime, fmtNumber, fmtShort } from '../format';
 
 interface Row {
   id: string;
@@ -182,7 +182,8 @@ export function HistoryPage() {
                 }
               : undefined
           }
-          scroll={{ x: 1100 }}
+          size="middle"
+          scroll={{ x: 'max-content' }}
           locale={{ emptyText: <EmptyState title="No history found" description="Try a wider date range or clear the filters." /> }}
           pagination={{
             current: page,
@@ -199,10 +200,10 @@ export function HistoryPage() {
             {
               title: 'Attachment',
               fixed: 'left',
-              width: 260,
+              width: 210,
               render: (_, r) => (
                 <div>
-                  <Typography.Text strong ellipsis style={{ display: 'block', maxWidth: 240 }}>
+                  <Typography.Text strong ellipsis={{ tooltip: r.finalFileName ?? r.attachment.name }} style={{ display: 'block', maxWidth: 190 }}>
                     {r.finalFileName ?? r.attachment.name}
                   </Typography.Text>
                   <span className="mv-muted" style={{ fontSize: 12.5 }}>{fmtBytes(r.attachment.sizeBytes)}</span>
@@ -216,26 +217,26 @@ export function HistoryPage() {
             },
             {
               title: 'Email',
-              width: 300,
+
               render: (_, r) => (
                 <div>
-                  <Typography.Text ellipsis style={{ display: 'block', maxWidth: 280 }}>{r.match.message.subject}</Typography.Text>
+                  <Typography.Text ellipsis={{ tooltip: r.match.message.subject }} style={{ display: 'block', maxWidth: 'min(320px, 18vw)', minWidth: 150 }}>{r.match.message.subject}</Typography.Text>
                   <span className="mv-muted" style={{ fontSize: 12.5 }}>{r.match.message.fromEmail}</span>
                 </div>
               ),
             },
-            { title: 'Received', width: 160, render: (_, r) => fmtDateTime(r.match.message.receivedAt) },
-            { title: 'Rule', width: 170, render: (_, r) => r.match.rule.name },
-            { title: 'Mailbox', width: 200, render: (_, r) => <span className="mv-muted">{r.match.message.mailbox.email}</span> },
+            { title: 'Received', width: 130, render: (_, r) => <Tooltip title={fmtDateTime(r.match.message.receivedAt)}><span style={{ whiteSpace: 'nowrap' }}>{fmtShort(r.match.message.receivedAt)}</span></Tooltip> },
+            { title: 'Rule', width: 160, render: (_, r) => <Typography.Text ellipsis style={{ maxWidth: 140 }}>{r.match.rule.name}</Typography.Text> },
+            { title: 'Mailbox', width: 190, responsive: ['xxl'], render: (_, r) => <Typography.Text type="secondary" ellipsis style={{ maxWidth: 170 }}>{r.match.message.mailbox.email}</Typography.Text> },
             {
               title: 'Status',
-              width: 170,
+              width: 160,
               render: (_, r) => {
                 const note = r.errorMessage ?? r.skipReason;
                 return note ? <Tooltip title={note}><span><DownloadStatusTag status={r.status} /></span></Tooltip> : <DownloadStatusTag status={r.status} />;
               },
             },
-            { title: 'Downloaded', width: 160, render: (_, r) => fmtDateTime(r.downloadedAt) },
+            { title: 'Downloaded', width: 150, responsive: ['xxl'], render: (_, r) => fmtDateTime(r.downloadedAt) },
           ]}
         />
       </Card>

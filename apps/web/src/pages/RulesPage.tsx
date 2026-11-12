@@ -99,56 +99,56 @@ export function RulesPage() {
             {
               title: 'Rule',
               render: (_, r) => (
-                <div style={{ maxWidth: 420 }}>
+                <div style={{ maxWidth: 'min(440px, 26vw)', minWidth: 200 }}>
                   <Space size={6} wrap>
                     <span style={{ fontWeight: 600 }}>{r.name}</span>
                     {r.simulationMode && <Tag color="purple" icon={<ExperimentOutlined />}>Simulation</Tag>}
                     {r.stopFurtherRules && <Tooltip title="Stops other rules from processing the same email"><Tag icon={<StopOutlined />}>Stops further rules</Tag></Tooltip>}
                     {!r.autoDownload && <Tag color="blue">Manual download</Tag>}
                   </Space>
-                  <Typography.Text type="secondary" ellipsis style={{ display: 'block', fontSize: 12.5 }}>
+                  <Typography.Text type="secondary" ellipsis={{ tooltip: conditionSummary(r) }} style={{ display: 'block', fontSize: 12.5 }}>
                     {conditionSummary(r)}
+                  </Typography.Text>
+                  <Typography.Text type="secondary" ellipsis style={{ display: 'block', fontSize: 12 }}>
+                    {r.mailbox.email}
                   </Typography.Text>
                 </div>
               ),
             },
-            { title: 'Mailbox', render: (_, r) => <span className="mv-muted">{r.mailbox.email}</span>, responsive: ['lg'] },
             {
               title: 'Destination',
               responsive: ['md'],
-              width: 280,
+              width: 220,
               render: (_, r) => (
-                <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                    <span style={{ fontWeight: 500 }}>{r.destination.name}</span>
-                    <DestinationStatusTag status={r.destination.status} />
-                  </div>
+                <div style={{ maxWidth: 200 }}>
+                  <Typography.Text ellipsis={{ tooltip: r.destination.basePath }} style={{ display: 'block', fontWeight: 500 }}>
+                    {r.destination.name}
+                  </Typography.Text>
+                  <DestinationStatusTag status={r.destination.status} />
                   {r.download.subfolderPattern && (
-                    <Typography.Text className="mv-mono mv-muted" ellipsis style={{ display: 'block', maxWidth: 260 }}>
+                    <Typography.Text className="mv-mono mv-muted" ellipsis={{ tooltip: r.download.subfolderPattern }} style={{ display: 'block', maxWidth: 200 }}>
                       …\{r.download.subfolderPattern}
                     </Typography.Text>
                   )}
                 </div>
               ),
             },
-            { title: 'Matches', align: 'right', render: (_, r) => fmtNumber(r._count.matches) },
-            { title: 'Version', align: 'center', responsive: ['xl'], render: (_, r) => <span className="mv-muted">v{r.currentVersion}</span> },
+            { title: 'Matches', align: 'right', width: 90, render: (_, r) => fmtNumber(r._count.matches) },
+            { title: 'Version', align: 'center', width: 80, responsive: ['xxl'], render: (_, r) => <span className="mv-muted">v{r.currentVersion}</span> },
             {
               title: 'Enabled',
-              align: 'center',
-              render: (_, r) => (
-                <Switch checked={r.enabled} disabled={!can('rules', 'edit')} loading={toggle.isPending && toggle.variables?.id === r.id} onChange={(enabled) => toggle.mutate({ id: r.id, enabled })} />
-              ),
-            },
-            {
-              title: '',
               align: 'right',
-              render: (_, r) =>
-                can('rules', 'edit') && (
-                  <Button icon={<EditOutlined />} onClick={() => void openEdit(r.id)}>
-                    Edit
-                  </Button>
-                ),
+              width: 120,
+              render: (_, r) => (
+                <Space size={10}>
+                  <Switch checked={r.enabled} disabled={!can('rules', 'edit')} loading={toggle.isPending && toggle.variables?.id === r.id} onChange={(enabled) => toggle.mutate({ id: r.id, enabled })} />
+                  {can('rules', 'edit') && (
+                    <Tooltip title="Edit rule">
+                      <Button icon={<EditOutlined />} onClick={() => void openEdit(r.id)} aria-label={`Edit ${r.name}`} />
+                    </Tooltip>
+                  )}
+                </Space>
+              ),
             },
           ]}
         />

@@ -133,7 +133,10 @@ export function AccountsPage() {
                   </div>
                   <div>
                     <div style={{ fontWeight: 600 }}>{m.email}</div>
-                    <div className="mv-muted" style={{ fontSize: 12.5 }}>{m.displayName ?? '—'}</div>
+                    <div className="mv-muted" style={{ fontSize: 12.5 }}>
+                      {m.displayName ? `${m.displayName} · ` : ''}
+                      {fmtNumber(m._count.rules)} rule{m._count.rules === 1 ? '' : 's'}
+                    </div>
                   </div>
                 </Space>
               ),
@@ -142,15 +145,14 @@ export function AccountsPage() {
             {
               title: 'Access',
               dataIndex: 'authMode',
-              responsive: ['lg'],
+              responsive: ['xxl'],
               render: (a: MailboxAuthMode) => <Tag>{a === 'APP_ONLY' ? 'App-only' : 'User sign-in'}</Tag>,
             },
             { title: 'Folders', responsive: ['xxl'], render: (_, m) => m.folders.map((f) => f.displayName).join(', ') || '—' },
-            { title: 'Rules', align: 'right', render: (_, m) => fmtNumber(m._count.rules) },
             {
               title: 'Last sync',
               dataIndex: 'lastSyncAt',
-              responsive: ['md'],
+              responsive: ['lg'],
               onHeaderCell: () => ({ style: { whiteSpace: 'nowrap' } }),
               render: (v: string | null) => <Tooltip title={fmtDateTime(v)}><span className="mv-muted" style={{ whiteSpace: 'nowrap' }}>{fromNow(v)}</span></Tooltip>,
             },
