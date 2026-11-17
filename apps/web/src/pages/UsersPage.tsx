@@ -34,12 +34,15 @@ const MODULE_LABEL: Record<Module, string> = {
   dashboard: 'Dashboard',
   accounts: 'Email accounts',
   rules: 'Download rules',
-  ruleTesting: 'Rule testing & historical jobs',
+  ruleTesting: 'Rule testing',
+  historicalJobs: 'Historical jobs',
   history: 'Download history',
   destinations: 'Destination folders',
   notifications: 'Notifications',
   logs: 'Audit & logs',
+  system: 'System status',
   users: 'Users & roles',
+  integrations: 'Integrations',
   settings: 'Settings',
 };
 

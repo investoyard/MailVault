@@ -62,7 +62,7 @@ const NAV: NavGroup[] = [
       { key: '/accounts', label: 'Email Accounts', icon: <ContactsOutlined />, module: 'accounts' },
       { key: '/rules', label: 'Download Rules', icon: <NodeIndexOutlined />, module: 'rules' },
       { key: '/rule-testing', label: 'Rule Testing', icon: <ExperimentOutlined />, module: 'ruleTesting' },
-      { key: '/historical-jobs', label: 'Historical Jobs', icon: <HistoryOutlined />, module: 'ruleTesting' },
+      { key: '/historical-jobs', label: 'Historical Jobs', icon: <HistoryOutlined />, module: 'historicalJobs' },
     ],
   },
   {
@@ -81,7 +81,7 @@ const NAV: NavGroup[] = [
     items: [
       { key: '/notifications', label: 'Notifications', icon: <BellOutlined />, module: 'notifications' },
       { key: '/logs', label: 'Audit & Logs', icon: <ProfileOutlined />, module: 'logs' },
-      { key: '/system', label: 'System Status', icon: <CloudServerOutlined />, module: 'dashboard' },
+      { key: '/system', label: 'System Status', icon: <CloudServerOutlined />, module: 'system' },
     ],
   },
   {
@@ -90,7 +90,7 @@ const NAV: NavGroup[] = [
     icon: <ControlOutlined />,
     items: [
       { key: '/users', label: 'Users & Roles', icon: <TeamOutlined />, module: 'users' },
-      { key: '/integrations', label: 'Integrations', icon: <ApiOutlined />, module: 'settings' },
+      { key: '/integrations', label: 'Integrations', icon: <ApiOutlined />, module: 'integrations' },
       { key: '/settings', label: 'Settings', icon: <SettingOutlined />, module: 'settings' },
     ],
   },

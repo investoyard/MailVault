@@ -1,15 +1,19 @@
 // Module x action permission matrix. Roles are templates; admins can fine-tune per user later.
 
+// One module per page, in menu order (the Users page lists them in this order).
 export const MODULES = [
   'dashboard',
   'accounts',
   'rules',
   'ruleTesting',
+  'historicalJobs',
   'history',
   'destinations',
   'notifications',
   'logs',
+  'system',
   'users',
+  'integrations',
   'settings',
 ] as const;
 export type Module = (typeof MODULES)[number];
@@ -31,10 +35,13 @@ export const ROLE_TEMPLATES: Record<Role, PermissionSet> = {
     accounts: all,
     rules: all,
     ruleTesting: ['view', 'execute'],
+    historicalJobs: ['view', 'execute'],
     history: ['view', 'execute'],
     destinations: all,
     notifications: ['view'],
     logs: ['view'],
+    system: ['view'],
+    integrations: ['view'],
     settings: ['view'],
   },
   OPERATOR: {
@@ -42,10 +49,12 @@ export const ROLE_TEMPLATES: Record<Role, PermissionSet> = {
     accounts: ['view'],
     rules: ['view'],
     ruleTesting: ['view', 'execute'],
+    historicalJobs: ['view', 'execute'],
     history: ['view', 'execute'],
     destinations: ['view'],
     notifications: ['view'],
     logs: ['view'],
+    system: ['view'],
   },
   VIEWER: {
     dashboard: ['view'],
@@ -54,6 +63,7 @@ export const ROLE_TEMPLATES: Record<Role, PermissionSet> = {
     history: ['view'],
     destinations: ['view'],
     notifications: ['view'],
+    system: ['view'],
   },
 };
 

@@ -174,7 +174,7 @@ export function IntegrationsPage() {
   const [secret, setSecret] = useState<string | null>(null);
   const [log, setLog] = useState<Hook | null>(null);
   const q = useQuery({ queryKey: ['webhooks'], queryFn: () => api.get<Hook[]>('/api/webhooks'), refetchInterval: 15_000 });
-  const edit = can('settings', 'edit');
+  const edit = can('integrations', 'edit');
 
   const action = useMutation({
     mutationFn: ({ id, kind }: { id: string; kind: 'test' | 'rotate' | 'delete' }): Promise<ActionResult> =>
@@ -257,7 +257,7 @@ export function IntegrationsPage() {
               render: (_, h) => (
                 <Space>
                   <Tooltip title="Delivery log"><Button icon={<UnorderedListOutlined />} onClick={() => setLog(h)} /></Tooltip>
-                  {can('settings', 'execute') && <Tooltip title="Send a test message"><Button icon={<SendOutlined />} loading={action.isPending && action.variables?.id === h.id && action.variables.kind === 'test'} onClick={() => action.mutate({ id: h.id, kind: 'test' })} /></Tooltip>}
+                  {can('integrations', 'execute') && <Tooltip title="Send a test message"><Button icon={<SendOutlined />} loading={action.isPending && action.variables?.id === h.id && action.variables.kind === 'test'} onClick={() => action.mutate({ id: h.id, kind: 'test' })} /></Tooltip>}
                   {edit && (
                     <>
                       <Tooltip title="Edit"><Button icon={<EditOutlined />} onClick={() => setDrawer({ open: true, hook: h })} /></Tooltip>

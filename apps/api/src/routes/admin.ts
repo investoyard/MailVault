@@ -185,8 +185,8 @@ export async function adminRoutes(app: FastifyInstance) {
   });
 
   // Asks the worker to restart (finishes running jobs, then the supervisor starts a fresh copy that
-  // re-reads .env). Super Admin only by default (settings:execute).
-  app.post('/system/worker/restart', { preHandler: requirePermission('settings', 'execute') }, async (req, reply) => {
+  // re-reads .env). Super Admin only by default (system:execute).
+  app.post('/system/worker/restart', { preHandler: requirePermission('system', 'execute') }, async (req, reply) => {
     const online = await prisma.serviceHeartbeat.findMany({
       where: { service: 'worker', lastBeatAt: { gt: new Date(Date.now() - 3 * 60_000) } },
     });

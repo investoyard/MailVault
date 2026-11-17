@@ -86,7 +86,7 @@ export function HistoricalJobsPage() {
         title="Historical Jobs"
         subtitle="Process older emails on purpose. Simulate first to see what would be saved, then execute."
         extra={
-          can('ruleTesting', 'execute') && (
+          can('historicalJobs', 'execute') && (
             <Button type="primary" icon={<PlusOutlined />} onClick={() => setOpen(true)}>
               New historical job
             </Button>
@@ -105,7 +105,7 @@ export function HistoricalJobsPage() {
               <EmptyState
                 title="No historical jobs yet"
                 description="Use a historical job to collect attachments from emails that arrived before MailVault (or a rule) was set up."
-                action={can('ruleTesting', 'execute') && <Button type="primary" icon={<PlusOutlined />} onClick={() => setOpen(true)}>New historical job</Button>}
+                action={can('historicalJobs', 'execute') && <Button type="primary" icon={<PlusOutlined />} onClick={() => setOpen(true)}>New historical job</Button>}
               />
             ),
           }}
@@ -148,7 +148,7 @@ export function HistoricalJobsPage() {
               title: '',
               align: 'right',
               render: (_, j) =>
-                can('ruleTesting', 'execute') &&
+                can('historicalJobs', 'execute') &&
                 (j.status === 'RUNNING' || j.status === 'QUEUED' ? (
                   <Button
                     icon={<StopOutlined />}

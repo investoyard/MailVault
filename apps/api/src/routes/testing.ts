@@ -157,7 +157,7 @@ export async function testingRoutes(app: FastifyInstance) {
   });
 
   // ─────────── Historical jobs ───────────
-  app.get('/historical-jobs', { preHandler: requirePermission('ruleTesting') }, async (req) => {
+  app.get('/historical-jobs', { preHandler: requirePermission('historicalJobs') }, async (req) => {
     const scope = mailboxScope(req);
     const jobs = await prisma.historicalJob.findMany({ where: scope ? { mailboxId: { in: scope } } : {}, orderBy: { createdAt: 'desc' }, take: 100, include: { mailbox: { select: { email: true } } } });
     const ruleNames = new Map((await prisma.rule.findMany({ where: { id: { in: jobs.flatMap((j) => j.ruleIds) } }, select: { id: true, name: true } })).map((r) => [r.id, r.name]));
@@ -170,7 +170,7 @@ export async function testingRoutes(app: FastifyInstance) {
     }));
   });
 
-  app.post('/historical-jobs', { preHandler: requirePermission('ruleTesting', 'execute') }, async (req, reply) => {
+  app.post('/historical-jobs', { preHandler: requirePermission('historicalJobs', 'execute') }, async (req, reply) => {
     const b = z
       .object({
         mailboxId: z.string().min(1),
@@ -192,7 +192,7 @@ export async function testingRoutes(app: FastifyInstance) {
     return job;
   });
 
-  app.post('/historical-jobs/:id/cancel', { preHandler: requirePermission('ruleTesting', 'execute') }, async (req, reply) => {
+  app.post('/historical-jobs/:id/cancel', { preHandler: requirePermission('historicalJobs', 'execute') }, async (req, reply) => {
     const { id } = z.object({ id: z.string() }).parse(req.params);
     assertMailbox(req, (await prisma.historicalJob.findUniqueOrThrow({ where: { id } })).mailboxId);
     const { count } = await prisma.historicalJob.updateMany({ where: { id, status: { in: ['QUEUED', 'RUNNING'] } }, data: { status: 'CANCELLED', finishedAt: new Date() } });
@@ -201,7 +201,7 @@ export async function testingRoutes(app: FastifyInstance) {
     return { ok: true };
   });
 
-  app.post('/historical-jobs/:id/resume', { preHandler: requirePermission('ruleTesting', 'execute') }, async (req, reply) => {
+  app.post('/historical-jobs/:id/resume', { preHandler: requirePermission('historicalJobs', 'execute') }, async (req, reply) => {
     const { id } = z.object({ id: z.string() }).parse(req.params);
     assertMailbox(req, (await prisma.historicalJob.findUniqueOrThrow({ where: { id } })).mailboxId);
     const { count } = await prisma.historicalJob.updateMany({ where: { id, status: { in: ['CANCELLED', 'FAILED'] } }, data: { status: 'QUEUED', finishedAt: null } });

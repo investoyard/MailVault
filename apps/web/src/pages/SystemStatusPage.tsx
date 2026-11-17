@@ -66,7 +66,7 @@ export function SystemStatusPage() {
       },
     }).catch(() => undefined);
 
-  const canRestart = can('settings', 'execute');
+  const canRestart = can('system', 'execute');
 
   return (
     <>
