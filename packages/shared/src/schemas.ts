@@ -69,7 +69,7 @@ export const ruleInputSchema = z.object({
 export type RuleInput = z.infer<typeof ruleInputSchema>;
 
 export const mailboxInputSchema = z.object({
-  email: z.email().trim().toLowerCase(),
+  email: z.string().trim().toLowerCase().pipe(z.email('Enter a valid email address')), // trim before checking
   displayName: z.string().trim().max(120).optional(),
   authMode: z.enum(MAILBOX_AUTH_MODES).default('APP_ONLY'),
   enabled: z.boolean().default(true),

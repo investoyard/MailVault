@@ -79,7 +79,11 @@ await app.register(jwt, {
 app.setErrorHandler((err, req, reply) => {
   if ((err as { code?: string }).code === 'P2025') return reply.code(404).send({ error: 'Not found' });
   if (err instanceof ZodError) {
-    return reply.code(400).send({ error: 'Please check the form', issues: err.issues });
+    // Name the field and the problem, e.g. "Please check the form: Email – Enter a valid email address".
+    const first = err.issues[0];
+    const field = first?.path.length ? String(first.path[0]).replace(/([a-z])([A-Z])/g, '$1 $2').replace(/^./, (c) => c.toUpperCase()) : '';
+    const detail = first ? `${field ? `${field} – ` : ''}${first.message}` : '';
+    return reply.code(400).send({ error: detail ? `Please check the form: ${detail}` : 'Please check the form', issues: err.issues });
   }
   const status = (err as { statusCode?: number }).statusCode ?? 500;
   if (status >= 500) req.log.error(err);

@@ -11,13 +11,22 @@ const password = z
   .min(10, 'Use at least 10 characters')
   .refine((p) => /[a-zA-Z]/.test(p) && /\d/.test(p), 'Use letters and numbers');
 
-const permissionsSchema = z.record(z.enum(MODULES), z.array(z.enum(ACTIONS))).nullable().optional();
+// partialRecord: a permission set lists only the modules it grants (zod 4's z.record with an enum key
+// would demand every module).
+const permissionsSchema = z.partialRecord(z.enum(MODULES), z.array(z.enum(ACTIONS))).nullable().optional();
 
 const userBase = {
-  displayName: z.string().trim().min(2).max(120),
-  email: z.email().trim().toLowerCase().optional().or(z.literal('').transform(() => undefined)),
+  displayName: z.string().trim().min(2, 'Enter the full name (at least 2 characters)').max(120),
+  // Optional; blank/null means "no email". Trimmed before the format check so a stray space is fine.
+  email: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .pipe(z.union([z.literal(''), z.email('Enter a valid email address')]))
+    .nullish()
+    .transform((e) => e || undefined),
   role: z.enum(ROLES),
-  mailboxIds: z.array(z.string()).default([]),
+  mailboxIds: z.array(z.string()).nullish().transform((ids) => ids ?? []),
   permissions: permissionsSchema,
 };
 
