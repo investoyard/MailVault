@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { PgBoss } from 'pg-boss';
 import { prisma } from '@mailvault/db';
-import { QUEUES, type HistoricalJobMsg, type ManualDownloadJob, type SyncJob } from '@mailvault/shared';
+import { QUEUES, type HistoricalJobMsg, type ManualDownloadJob, type SyncJob, type WorkerControlJob } from '@mailvault/shared';
 import { runFolderHealth } from './jobs/folder-health.js';
 import { defaultContext as ctx, graphConfigured } from './pipeline/context.js';
 import { dueMailboxes, syncMailbox } from './pipeline/sync.js';
@@ -20,6 +20,9 @@ import { checkCertificate, checkRepeatedFailures, runCleanup } from './jobs/main
 const version = (JSON.parse(readFileSync(resolve(ROOT, 'package.json'), 'utf8')) as { version: string }).version;
 const instanceId = `${hostname()}-${process.pid}-${randomUUID().slice(0, 8)}`;
 const startedAt = new Date();
+/** Exit code that tells src/supervisor.mjs to start a fresh copy straight away. */
+const RESTART_EXIT_CODE = 75;
+const supervised = process.env.MAILVAULT_SUPERVISED === '1';
 
 async function heartbeat() {
   const memoryMb = Math.round(process.memoryUsage().rss / 1024 / 1024);
@@ -40,7 +43,8 @@ async function main() {
   log.info({ instanceId, version }, 'MailVault worker starting');
   await prisma.$connect();
 
-  await prisma.serviceHeartbeat.deleteMany({ where: { service: 'worker', hostname: hostname(), lastBeatAt: { lt: new Date(Date.now() - 10 * 60_000) } } });
+  // Forget copies on this server that stopped reporting (killed without a clean shutdown).
+  await prisma.serviceHeartbeat.deleteMany({ where: { service: 'worker', hostname: hostname(), lastBeatAt: { lt: new Date(Date.now() - 3 * 60_000) } } });
   await heartbeat();
   const beat = setInterval(() => heartbeat().catch((err) => log.error({ err }, 'heartbeat failed')), env.heartbeatSeconds * 1000);
   await recoverStuckDownloads();
@@ -55,6 +59,7 @@ async function main() {
   await boss.createQueue(QUEUES.manualDownload);
   await boss.createQueue('maintenance-nightly');
   await boss.createQueue('daily-digest');
+  await boss.createQueue(QUEUES.workerControl);
   await boss.schedule('maintenance-nightly', '15 2 * * *', {}, { tz: env.timeZone });
   await boss.schedule('daily-digest', '0 8 * * *', {}, { tz: env.timeZone });
 
@@ -125,16 +130,40 @@ async function main() {
   });
   log.info('MailVault worker is running');
 
-  const shutdown = async (signal: string) => {
+  let shuttingDown = false;
+  const shutdown = async (signal: string, exitCode = 0) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
     log.info({ signal }, 'shutting down');
     clearInterval(beat);
+    // Graceful: lets running syncs/downloads finish (up to 20 s) before stopping.
     await boss.stop({ graceful: true, timeout: 20_000 }).catch(() => undefined);
     await prisma.serviceHeartbeat.delete({ where: { instanceId } }).catch(() => undefined);
     await prisma.$disconnect();
-    process.exit(0);
+    process.exit(exitCode);
   };
   process.on('SIGINT', () => void shutdown('SIGINT'));
   process.on('SIGTERM', () => void shutdown('SIGTERM'));
+
+  // Restart requested from the admin panel (System Status → Restart worker).
+  await boss.work<WorkerControlJob>(QUEUES.workerControl, async ([job]) => {
+    if (!job || job.data.action !== 'restart') return;
+    // A request older than this process (e.g. sent while the worker was down) is already satisfied.
+    if (job.data.requestedAt < startedAt.getTime()) return;
+    if (!supervised) {
+      log.warn('restart requested, but this worker was not started by the MailVault service; restart it by hand');
+      await prisma.processingLog.create({
+        data: { level: 'warn', source: 'system', message: 'Restart requested, but this worker was not started by the MailVault service (npm run start:worker). Restart it by hand.', data: { instanceId } },
+      });
+      return;
+    }
+    log.info({ requestedBy: job.data.requestedBy }, 'restart requested from the admin panel');
+    await prisma.processingLog.create({
+      data: { level: 'info', source: 'system', message: `Worker restart requested by ${job.data.requestedBy}`, data: { instanceId } },
+    });
+    // Let pg-boss mark this job done first, then stop gracefully; the supervisor starts a fresh copy.
+    setTimeout(() => void shutdown('restart', RESTART_EXIT_CODE), 1_000);
+  });
 }
 
 process.on('unhandledRejection', (err) => log.error({ err }, 'unhandled rejection'));

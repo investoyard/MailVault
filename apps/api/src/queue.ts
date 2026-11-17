@@ -18,6 +18,7 @@ export function getQueue(): Promise<PgBoss> {
     await b.start();
     await b.createQueue(QUEUES.syncMailbox, { policy: 'stately' }).catch(() => undefined);
     await b.createQueue(QUEUES.processDownloads, { policy: 'stately' }).catch(() => undefined);
+    await b.createQueue(QUEUES.workerControl).catch(() => undefined);
     boss = b;
     return b;
   })();

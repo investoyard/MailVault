@@ -90,7 +90,7 @@ processing service stopped, certificate expiring, historical job finished, and t
 |---|---|
 | Health check | `npm run preflight` (monthly) |
 | Backups | Automatic at 01:30 to `D:\Backups\mailvault\daily` (14 days). Verify: `scripts\restore-db.ps1 -File <dump>` |
-| Restart | `Stop-ScheduledTask MailVault-Worker; Start-ScheduledTask MailVault-Worker` (same for MailVault-API) |
+| Restart | **System Status → Restart worker** (Super Admin; e.g. after editing `.env`). On the server: `Stop-ScheduledTask MailVault-Worker; Start-ScheduledTask MailVault-Worker` |
 | Logs | `logs\api.log`, `logs\worker.log`; in the app: Audit & Logs → Processing logs |
 | Update MailVault | `git pull` → `npm install` → `npm run db:deploy` → run `scripts\install-service.ps1` again |
 | Certificate renewal | Alert 30 days before; `docs/ENTRA-SETUP.md` steps 1–2 |

@@ -1,7 +1,10 @@
+import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Alert, Button, Card, Col, Descriptions, Row, Tag } from 'antd';
-import { ApiOutlined, CloudServerOutlined, DatabaseOutlined, ReloadOutlined, WindowsOutlined } from '@ant-design/icons';
+import { Alert, App, Button, Card, Col, Descriptions, Row, Tag } from 'antd';
+import { ApiOutlined, CloudServerOutlined, DatabaseOutlined, PoweroffOutlined, ReloadOutlined, SyncOutlined, WindowsOutlined } from '@ant-design/icons';
 import { api } from '../api';
+import { useAuth } from '../auth';
+import { useConfirm } from '../components/confirm';
 import { PageHeader, StatCard } from '../components/ui';
 import { fmtDateTime, fromNow } from '../format';
 
@@ -17,9 +20,53 @@ interface Status {
 const uptime = (s: number) => (s < 3600 ? `${Math.round(s / 60)} min` : s < 86400 ? `${(s / 3600).toFixed(1)} h` : `${(s / 86400).toFixed(1)} days`);
 
 export function SystemStatusPage() {
-  const q = useQuery({ queryKey: ['system-status'], queryFn: () => api.get<Status>('/api/system/status'), refetchInterval: 15_000 });
+  const { can } = useAuth();
+  const confirm = useConfirm();
+  const { message } = App.useApp();
+  // Set while a restart is in progress: the time it was requested (ms).
+  const [restartingSince, setRestartingSince] = useState<number | null>(null);
+  const q = useQuery({
+    queryKey: ['system-status'],
+    queryFn: () => api.get<Status>('/api/system/status'),
+    refetchInterval: restartingSince ? 3_000 : 15_000,
+  });
   const s = q.data;
   const worker = s?.workers.find((w) => w.online) ?? s?.workers[0];
+
+  // The restart is done once a worker that started after the request is reporting in.
+  useEffect(() => {
+    if (!restartingSince || !s) return;
+    if (s.workers.some((w) => w.online && new Date(w.startedAt).getTime() > restartingSince)) {
+      setRestartingSince(null);
+      message.success('Worker restarted. It is running with the latest settings.');
+    } else if (Date.now() - restartingSince > 3 * 60_000) {
+      setRestartingSince(null);
+      message.warning('The worker has not come back yet. Check logs\\worker.log on the server, or the Processing log.');
+    }
+  }, [s, restartingSince, message]);
+
+  const restartWorker = () =>
+    confirm({
+      tone: 'warning',
+      icon: <PoweroffOutlined />,
+      title: 'Restart the worker?',
+      subject: worker ? `${worker.hostname} · PID ${worker.pid}` : undefined,
+      description:
+        'The worker finishes the downloads it is working on, stops, and starts again with the latest settings from .env. Mail processing pauses for about a minute; nothing is lost.',
+      okText: 'Restart worker',
+      onConfirm: async () => {
+        try {
+          const r = await api.post<{ requestedAt: number; message: string }>('/api/system/worker/restart');
+          setRestartingSince(r.requestedAt);
+          message.info(r.message);
+        } catch (err) {
+          message.error((err as Error).message);
+          throw err;
+        }
+      },
+    }).catch(() => undefined);
+
+  const canRestart = can('settings', 'execute');
 
   return (
     <>
@@ -84,7 +131,23 @@ export function SystemStatusPage() {
         </Descriptions>
       </Card>
 
-      <Card className="mv-card" title="Worker instances" style={{ marginTop: 16 }}>
+      <Card
+        className="mv-card"
+        title="Worker instances"
+        style={{ marginTop: 16 }}
+        extra={
+          canRestart && (
+            <Button
+              icon={restartingSince ? <SyncOutlined spin /> : <PoweroffOutlined />}
+              disabled={!!restartingSince || !worker?.online}
+              title={!worker?.online ? 'The worker is not running' : undefined}
+              onClick={restartWorker}
+            >
+              {restartingSince ? 'Restarting…' : 'Restart worker'}
+            </Button>
+          )
+        }
+      >
         {!s?.workers.length ? (
           <span className="mv-muted">No worker has reported in yet.</span>
         ) : (

@@ -12,33 +12,32 @@ Exchange permission changes to take effect.
 
 ## 1. Create the certificate (on the MailVault server)
 
-Run in PowerShell **as Administrator**:
+Open PowerShell **as Administrator** and run this **one line**:
 
 ```powershell
-$cert = New-SelfSignedCertificate -Subject "CN=MailVault Graph" -CertStoreLocation "Cert:\LocalMachine\My" `
-  -KeyExportPolicy Exportable -KeySpec Signature -KeyLength 2048 -KeyAlgorithm RSA -HashAlgorithm SHA256 `
-  -NotAfter (Get-Date).AddYears(2)
-New-Item -ItemType Directory -Force D:\Claude\MailVault\secrets | Out-Null
-
-# Public part -> uploaded to Entra ID
-Export-Certificate -Cert $cert -FilePath D:\Claude\MailVault\secrets\mailvault-graph.cer
-
-# Private key + certificate as PEM -> used by MailVault (M365_CERT_PATH)
-$pfxPass = Read-Host -AsSecureString "Temporary PFX password"
-Export-PfxCertificate -Cert $cert -FilePath D:\Claude\MailVault\secrets\mailvault-graph.pfx -Password $pfxPass
-& "C:\Program Files\Git\usr\bin\openssl.exe" pkcs12 -in D:\Claude\MailVault\secrets\mailvault-graph.pfx `
-  -out D:\Claude\MailVault\secrets\mailvault-graph.pem -nodes
-Remove-Item D:\Claude\MailVault\secrets\mailvault-graph.pfx
-$cert.Thumbprint
+powershell -ExecutionPolicy Bypass -File D:\Claude\MailVault\scripts\create-graph-cert.ps1
 ```
 
-Lock down the folder so only Administrators and the MailVault service account can read it:
+The script uses the OpenSSL that comes with Git for Windows (no Windows certificate store, no passwords) and:
+
+1. creates `D:\Claude\MailVault\secrets\mailvault-graph.cer`: the **public** certificate you upload in step 2;
+2. creates `D:\Claude\MailVault\secrets\mailvault-graph.pem`: the **private key** MailVault signs in with (`M365_CERT_PATH`);
+3. limits the `secrets` folder to Administrators, SYSTEM (runs the worker), you and `IIS APPPOOL\MailVault` (runs the website);
+4. prints the thumbprint, the expiry date and the exact `.env` line to add.
+
+If the worker runs under a service account instead of SYSTEM, give it read access too:
 
 ```powershell
-icacls D:\Claude\MailVault\secrets /inheritance:r /grant:r "Administrators:(OI)(CI)F" "CORP\svc-mailvault:(OI)(CI)R"
+powershell -ExecutionPolicy Bypass -File D:\Claude\MailVault\scripts\create-graph-cert.ps1 -ReadAccess "CORP\svc-mailvault$"
 ```
 
-> `secrets\`, `*.pem` and `*.pfx` are git-ignored. Note the expiry date: MailVault will alert 30 days before (Phase 3).
+The script refuses to replace an existing certificate. To make a new one (for example before the old one expires), add
+`-Force` and upload the new `.cer` to Entra ID.
+
+> `secrets\`, `*.pem` and `*.pfx` are git-ignored. Never email or share the `.pem` file. Note the expiry date: MailVault
+> alerts 30 days before.
+>
+> Copying commands out of the PDF can break long lines. That is why this step is a single short line.
 
 ## 2. Register the app in Entra ID
 

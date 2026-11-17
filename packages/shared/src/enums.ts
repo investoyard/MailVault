@@ -46,7 +46,15 @@ export const QUEUES = {
   folderHealth: 'folder-health',
   historical: 'historical-job',
   manualDownload: 'manual-download',
+  workerControl: 'worker-control',
 } as const;
+
+/** Sent by the API to ask the worker to restart (System Status → Restart worker). */
+export interface WorkerControlJob {
+  action: 'restart';
+  requestedAt: number; // ms epoch; a worker started after this ignores the request
+  requestedBy: string;
+}
 
 export interface SyncJob {
   mailboxId: string;

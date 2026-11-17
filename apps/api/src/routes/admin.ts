@@ -3,6 +3,8 @@ import { z } from 'zod';
 import { prisma, sendTestEmail, smtpSettings, type Prisma } from '@mailvault/db';
 import { requireAuth, requirePermission } from '../auth.js';
 import { audit } from './resources.js';
+import { getQueue } from '../queue.js';
+import { QUEUES, type WorkerControlJob } from '@mailvault/shared';
 
 export async function adminRoutes(app: FastifyInstance) {
   // ─────────── Notifications (per signed-in user) ───────────
@@ -180,6 +182,28 @@ export async function adminRoutes(app: FastifyInstance) {
         teams: Boolean(process.env.TEAMS_WEBHOOK_URL?.trim()) && (await prisma.setting.findUnique({ where: { key: 'notifications.teams.enabled' } }))?.value === true,
       },
     };
+  });
+
+  // Asks the worker to restart (finishes running jobs, then the supervisor starts a fresh copy that
+  // re-reads .env). Super Admin only by default (settings:execute).
+  app.post('/system/worker/restart', { preHandler: requirePermission('settings', 'execute') }, async (req, reply) => {
+    const online = await prisma.serviceHeartbeat.findMany({
+      where: { service: 'worker', lastBeatAt: { gt: new Date(Date.now() - 3 * 60_000) } },
+    });
+    if (!online.length) {
+      return reply.code(409).send({
+        error: 'The worker is not running, so it cannot be restarted from here. Start the MailVault-Worker task on the server (scripts\\install-service.ps1).',
+      });
+    }
+    const requestedAt = Date.now();
+    const boss = await getQueue();
+    await boss.send(
+      QUEUES.workerControl,
+      { action: 'restart', requestedAt, requestedBy: req.user.username } satisfies WorkerControlJob,
+      { retryLimit: 0, expireInSeconds: 120 },
+    );
+    await audit(req.user.id, 'WORKER_RESTART_REQUESTED', 'System', null, null, { instances: online.map((w) => w.instanceId) }, req.ip);
+    return { ok: true, requestedAt, message: 'Restart requested. The worker finishes what it is doing and is back within about a minute.' };
   });
 
   // Sends a test email with the SMTP settings from the form (before or after saving them).
