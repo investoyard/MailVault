@@ -1,3 +1,4 @@
+import { WebhookReference } from '../components/WebhookReference';
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Alert, App, Button, Card, Checkbox, Drawer, Form, Input, Modal, Select, Space, Switch, Table, Tag, Tooltip, Typography } from 'antd';
@@ -303,15 +304,7 @@ export function IntegrationsPage() {
         />
       </Card>
 
-      <Card className="mv-card" title="For the team building the receiver">
-        <Typography.Paragraph style={{ marginBottom: 8 }}>
-          MailVault sends <span className="mv-mono">POST</span> with a JSON body and these headers: <span className="mv-mono">X-MailVault-Event</span>, <span className="mv-mono">X-MailVault-Delivery</span>,{' '}
-          <span className="mv-mono">X-MailVault-Timestamp</span>, <span className="mv-mono">X-MailVault-Signature</span>. Answer with any 2xx status within 10 seconds; otherwise MailVault retries after 1, 5, 15, 60 and 240 minutes.
-        </Typography.Paragraph>
-        <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
-          Verify: <span className="mv-mono">sha256=HMAC_SHA256(secret, timestamp + "." + body)</span> must equal the signature header. Full example in docs/WEBHOOKS.md.
-        </Typography.Paragraph>
-      </Card>
+      <WebhookReference />
 
       <HookDrawer open={drawer.open} hook={drawer.hook} onClose={() => setDrawer({ open: false, hook: null })} onCreated={setSecret} />
       <DeliveriesDrawer hook={log} onClose={() => setLog(null)} />
