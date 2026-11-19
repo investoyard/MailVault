@@ -10,6 +10,7 @@ import { HistoryPage } from './pages/HistoryPage';
 import { DestinationsPage } from './pages/DestinationsPage';
 import { NotificationsPage } from './pages/NotificationsPage';
 import { LogsPage } from './pages/LogsPage';
+import { SyncHistoryPage } from './pages/SyncHistoryPage';
 import { UsersPage } from './pages/UsersPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { SystemStatusPage } from './pages/SystemStatusPage';
@@ -47,6 +48,7 @@ export function App() {
         <Route path="history" element={<HistoryPage />} />
         <Route path="destinations" element={<DestinationsPage />} />
         <Route path="notifications" element={<NotificationsPage />} />
+        <Route path="sync-history" element={<SyncHistoryPage />} />
         <Route path="logs" element={<LogsPage />} />
         <Route path="system" element={<SystemStatusPage />} />
         <Route path="users" element={<UsersPage />} />

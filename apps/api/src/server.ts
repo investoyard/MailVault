@@ -11,6 +11,7 @@ import { COOKIE_NAME } from './auth.js';
 import { authRoutes } from './routes/auth.js';
 import { dashboardRoutes } from './routes/dashboard.js';
 import { resourceRoutes } from './routes/resources.js';
+import { syncRunRoutes } from './routes/sync-runs.js';
 import { adminRoutes } from './routes/admin.js';
 import { ruleRoutes } from './routes/rules.js';
 import { testingRoutes } from './routes/testing.js';
@@ -98,6 +99,7 @@ app.get('/api/health', async () => {
 await app.register(authRoutes, { prefix: '/api/auth' });
 await app.register(dashboardRoutes, { prefix: '/api/dashboard' });
 await app.register(resourceRoutes, { prefix: '/api' });
+await app.register(syncRunRoutes, { prefix: '/api' });
 await app.register(adminRoutes, { prefix: '/api' });
 await app.register(ruleRoutes, { prefix: '/api' });
 await app.register(testingRoutes, { prefix: '/api' });

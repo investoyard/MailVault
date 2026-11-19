@@ -69,7 +69,7 @@ export async function syncMailbox(mailboxId: string, trigger: ProcessTrigger, ct
 
     const { matched } = await evaluateMailbox(mailboxId, ctx);
     const now = ctx.now();
-    await prisma.syncRun.update({ where: { id: run.id }, data: { finishedAt: now, messagesScanned: scanned, messagesMatched: matched } });
+    await prisma.syncRun.update({ where: { id: run.id }, data: { finishedAt: now, messagesScanned: scanned, newMessages, messagesMatched: matched } });
     await prisma.mailbox.update({ where: { id: mailboxId }, data: { status: 'CONNECTED', lastSyncAt: now, lastSuccessAt: now, lastError: null } });
     await resolveAlert(`MAILBOX:${mailboxId}`, `Mailbox connected again: ${mb.email}`, 'Email processing has resumed.', '/accounts');
     if (newMessages > 0) {
@@ -83,7 +83,7 @@ export async function syncMailbox(mailboxId: string, trigger: ProcessTrigger, ct
     const status = err instanceof NotConfiguredError ? 'WARNING' : authProblem ? 'DISCONNECTED' : 'WARNING';
     log.warn({ mailbox: mb.email, err: message }, 'mailbox sync failed');
 
-    await prisma.syncRun.update({ where: { id: run.id }, data: { finishedAt: ctx.now(), messagesScanned: scanned, error: message } });
+    await prisma.syncRun.update({ where: { id: run.id }, data: { finishedAt: ctx.now(), messagesScanned: scanned, newMessages, error: message } });
     await prisma.mailbox.update({ where: { id: mailboxId }, data: { status, lastSyncAt: ctx.now(), lastError: message } });
     await plog('error', 'sync', `Sync failed for ${mb.email}: ${message}`, { mailboxId, correlationId: run.correlationId });
     if (authProblem) {

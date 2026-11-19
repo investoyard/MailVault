@@ -63,7 +63,7 @@ export function HistoryPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
   const [params] = useSearchParams();
-  const initial: Filters = { status: (params.get('status') as DownloadStatus | null) ?? undefined };
+  const initial: Filters = { status: (params.get('status') as DownloadStatus | null) ?? undefined, mailboxId: params.get('mailboxId') ?? undefined };
   const [filters, setFilters] = useState<Filters>(initial);
   const [draft, setDraft] = useState<Filters>(initial);
   const qc = useQueryClient();

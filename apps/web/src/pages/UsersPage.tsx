@@ -39,6 +39,7 @@ const MODULE_LABEL: Record<Module, string> = {
   history: 'Download history',
   destinations: 'Destination folders',
   notifications: 'Notifications',
+  syncHistory: 'Sync history',
   logs: 'Audit & logs',
   system: 'System status',
   users: 'Users & roles',

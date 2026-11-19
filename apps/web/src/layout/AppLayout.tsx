@@ -27,6 +27,7 @@ import {
   ControlOutlined,
   DatabaseOutlined,
   MonitorOutlined,
+  FieldTimeOutlined,
 } from '@ant-design/icons';
 import { ChangePasswordModal, PreferencesModal } from '../components/AccountModals';
 import { useConfirm } from '../components/confirm';
@@ -80,6 +81,7 @@ const NAV: NavGroup[] = [
     icon: <MonitorOutlined />,
     items: [
       { key: '/notifications', label: 'Notifications', icon: <BellOutlined />, module: 'notifications' },
+      { key: '/sync-history', label: 'Sync History', icon: <FieldTimeOutlined />, module: 'syncHistory' },
       { key: '/logs', label: 'Audit & Logs', icon: <ProfileOutlined />, module: 'logs' },
       { key: '/system', label: 'System Status', icon: <CloudServerOutlined />, module: 'system' },
     ],
@@ -171,7 +173,7 @@ export function AppLayout() {
     es.addEventListener('change', () => {
       clearTimeout(timer);
       timer = setTimeout(() => {
-        for (const key of ['dashboard', 'history', 'historical-jobs', 'mailboxes', 'notifications', 'destinations', 'system-status']) {
+        for (const key of ['dashboard', 'history', 'historical-jobs', 'mailboxes', 'notifications', 'destinations', 'system-status', 'sync-runs']) {
           void qc.invalidateQueries({ queryKey: [key] });
         }
       }, 800);

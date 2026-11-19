@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { App, Alert, Button, Card, DatePicker, Descriptions, Drawer, Dropdown, Form, Input, InputNumber, Modal, Radio, Space, Switch, Table, Tag, Tooltip } from 'antd';
-import { ApiOutlined, CheckCircleFilled, CloseCircleFilled, FolderOutlined, MailOutlined, MoreOutlined, PlusOutlined, ReloadOutlined, SyncOutlined } from '@ant-design/icons';
+import { ApiOutlined, CheckCircleFilled, CloseCircleFilled, FieldTimeOutlined, FolderOutlined, MailOutlined, MoreOutlined, PlusOutlined, ReloadOutlined, SyncOutlined } from '@ant-design/icons';
+import { useNavigate } from 'react-router-dom';
 import { FoldersModal } from '../components/FoldersModal';
 import dayjs, { type Dayjs } from 'dayjs';
 import type { MailboxAuthMode, MailboxStatus } from '@mailvault/shared';
@@ -37,6 +38,7 @@ interface TestResult {
 
 export function AccountsPage() {
   const { can } = useAuth();
+  const navigate = useNavigate();
   const { message } = App.useApp();
   const confirm = useConfirm();
   const qc = useQueryClient();
@@ -156,7 +158,17 @@ export function AccountsPage() {
               dataIndex: 'lastSyncAt',
               responsive: ['lg'],
               onHeaderCell: () => ({ style: { whiteSpace: 'nowrap' } }),
-              render: (v: string | null) => <Tooltip title={fmtDateTime(v)}><span className="mv-muted" style={{ whiteSpace: 'nowrap' }}>{fromNow(v)}</span></Tooltip>,
+              render: (v: string | null, m) => (
+                <Tooltip title={can('syncHistory', 'view') ? `${fmtDateTime(v)} · click for sync history` : fmtDateTime(v)}>
+                  <span
+                    className="mv-muted"
+                    style={{ whiteSpace: 'nowrap', cursor: can('syncHistory', 'view') ? 'pointer' : undefined, textDecoration: can('syncHistory', 'view') ? 'underline dotted' : undefined }}
+                    onClick={() => can('syncHistory', 'view') && navigate(`/sync-history?mailboxId=${m.id}`)}
+                  >
+                    {fromNow(v)}
+                  </span>
+                </Tooltip>
+              ),
             },
             {
               title: 'Monitoring',
@@ -206,8 +218,10 @@ export function AccountsPage() {
                       items: [
                         { key: 'test', icon: <ApiOutlined />, label: 'Test connection', disabled: !can('accounts', 'execute') },
                         { key: 'folders', icon: <FolderOutlined />, label: 'Monitored folders' },
+                        ...(can('syncHistory', 'view') ? [{ key: 'history', icon: <FieldTimeOutlined />, label: 'Sync history' }] : []),
                       ],
-                      onClick: (e) => (e.key === 'test' ? void runTest(m) : setFoldersFor(m)),
+                      onClick: (e) =>
+                        e.key === 'test' ? void runTest(m) : e.key === 'history' ? navigate(`/sync-history?mailboxId=${m.id}`) : setFoldersFor(m),
                     }}
                   >
                     <Button icon={<MoreOutlined />} loading={testing === m.id} aria-label="More actions" />

@@ -15,6 +15,7 @@ to **destination folders**. It never changes the mailbox. This guide covers day-
 - **Test connection** (⋮ menu): confirms MailVault can read the mailbox.
 - **Monitored folders** (⋮ menu): add subfolders if Outlook rules move emails out of the Inbox.
 - **Sync now**: checks the mailbox immediately (normally every 5 minutes).
+- **Sync history** (⋮ menu, or click *Last sync*; also Monitoring → Sync History): every check, automatic or Sync now, with result, new emails, emails that matched a rule, duration and any error. The trace button opens the full Processing log for that check.
 - **Pause** with the *Monitoring* switch; nothing is lost, emails are processed when switched back on.
 
 | Status | Meaning / action |
