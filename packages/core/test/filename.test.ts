@@ -88,6 +88,12 @@ describe('path patterns', () => {
     expect(buildFileName('{BaseName}_{Date:dd-MM-yyyy}', 'Statement.zip', at)).toBe('Statement_13-11-2026.zip');
     expect(buildFileName('{Today:yyyy-MM-dd}_{OriginalName}', 'a.PDF', at)).toBe('2026-11-19_a.PDF');
     expect(buildFileName('{BaseName}.{Ext}', 'x.tar.gz', at)).toBe('x.tar.gz');
+    // The extension always ends up once, at the end.
+    expect(buildFileName('{OriginalName}_{Date:ddMMyyyy}', 'INV-1042.zip', at)).toBe('INV-1042_13112026.zip');
+    expect(buildFileName('{BaseName}{Ext}', 'INV-1042.zip', at)).toBe('INV-1042.zip');
+    expect(buildFileName('{BaseName}.zip', 'INV-1042.zip', at)).toBe('INV-1042.zip');
+    expect(buildFileName('{Ext}_{BaseName}', 'INV-1042.zip', at)).toBe('zip_INV-1042.zip');
+    expect(buildFileName('{BaseName}_{yyyy}', 'README', at)).toBe('README_2026');
     expect(buildFileName('Report {MMMM} {yyyy}', 'r.xlsx', at)).toBe('Report November 2026.xlsx');
   });
 

@@ -441,7 +441,7 @@ export function RuleEditor({ open, rule, onClose }: { open: boolean; rule: RuleR
                 name={['download', 'fileNamePattern']}
                 label="File name"
                 rules={[patternRule]}
-                tooltip="{OriginalName} keeps the attachment's name. The extension (.pdf, .zip …) is added automatically when the pattern does not end with it."
+                tooltip="{OriginalName} alone keeps the attachment's name. The extension (.pdf, .zip …) is always added once at the end, so you don't need {Ext}."
                 extra={<TokenBar forFileName onPick={(t) => insertToken('fileNamePattern', t)} />}
               >
                 <Input className="mv-mono" placeholder="{BaseName}_{Date:dd-MM-yyyy}" />

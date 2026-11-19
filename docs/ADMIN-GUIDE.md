@@ -50,7 +50,7 @@ Download Rules → *New rule*:
    | `{Date:dd-MMM-yyyy} {BaseName}` | `07-Apr-2026 Statement.zip` |
    | `{BaseName}_{Today:yyyyMMdd}` | `Statement_20261119.zip` |
 
-   `{Date:…}` is the email's received date, `{Today:…}` the day the file is saved. Formats use `yyyy yy MMMM MMM MM M dd d HH mm ss` with `- _ . space ,` between them; the extension is added automatically. Unknown placeholders are flagged before you can save.
+   `{Date:…}` is the email's received date, `{Today:…}` the day the file is saved. Formats use `yyyy yy MMMM MMM MM M dd d HH mm ss` with `- _ . space ,` between them; the extension is always added once at the end (`{OriginalName}_{Date:ddMMyyyy}` → `Statement_07042026.zip`; a trailing `{Ext}` is not repeated). Unknown placeholders are flagged before you can save.
 5. Watch the **Example save location** on the right, then **Test on the last 14 days of email**.
 6. New rules can start in **Simulation**: History shows "would save to …" without writing files.
 

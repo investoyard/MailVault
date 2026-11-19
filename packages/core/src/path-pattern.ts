@@ -58,9 +58,9 @@ export const PATTERN_TOKEN_HELP: Record<PatternToken, string> = {
   '{Subject}': 'Email subject (first 60 characters)',
   '{RuleName}': 'Name of this rule',
   '{Mailbox}': 'Mailbox address',
-  '{OriginalName}': 'Original attachment name with extension: INV-1042.pdf',
+  '{OriginalName}': 'Original attachment name: INV-1042 (the extension .pdf is always added at the end)',
   '{BaseName}': 'Original name without extension: INV-1042',
-  '{Ext}': 'File extension: pdf',
+  '{Ext}': 'File extension: pdf (not needed at the end; it is added automatically)',
   '{Today}': 'Date the file is saved (not the email date): 20261119',
 };
 
@@ -161,16 +161,21 @@ const baseName = (name: string) => (name.includes('.') ? name.slice(0, name.last
 
 /**
  * Final file name for an attachment from the rule's file-name pattern.
- * The original extension is added when the pattern does not end with it,
- * so "{BaseName}_{Date:dd-MM-yyyy}" gives "INV-1042_07-04-2026.pdf".
+ * The pattern names the file *without* its extension; the original extension is always
+ * added once at the end. So {OriginalName} inside a longer pattern stands for the name
+ * without extension, and a trailing {Ext} / .{Ext} is not repeated:
+ *   "{OriginalName}_{Date:ddMMyyyy}" → "INV-1042_19112026.zip"
+ *   "{BaseName}{Ext}" or "{BaseName}.{Ext}" → "INV-1042.zip"
  */
 export function buildFileName(pattern: string | undefined, original: string, ctx: PatternContext): string {
   const p = pattern?.trim() || '{OriginalName}';
   if (p === '{OriginalName}') return sanitizeFileName(original);
-  let name = sanitizeFileName(renderPattern(p, { ...ctx, originalName: original }));
   const ext = extOf(original);
-  if (ext && !name.toLowerCase().endsWith(`.${ext.toLowerCase()}`)) name = sanitizeFileName(`${name}.${ext}`);
-  return name;
+  const stem = p.replace(/\.?\{Ext\}$/, '').replace(/\{OriginalName\}/g, '{BaseName}');
+  let name = renderPattern(stem, { ...ctx, originalName: original }).replace(/[. ]+$/, '');
+  // A literal extension typed by hand ("{BaseName}.zip") is not doubled.
+  if (ext && name.toLowerCase().endsWith(`.${ext.toLowerCase()}`)) name = name.slice(0, -(ext.length + 1));
+  return sanitizeFileName(ext ? `${name || baseName(original)}.${ext}` : name || original);
 }
 
 /**
