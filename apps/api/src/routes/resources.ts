@@ -1,11 +1,12 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { checkFolder } from '@mailvault/core/node';
-import { prisma, type Prisma } from '@mailvault/db';
+import { assertAllowed, normalizeFolderPath } from '@mailvault/core/node';
+import { browseRoots, prisma, type Prisma } from '@mailvault/db';
 import { destinationInputSchema, mailboxInputSchema, DOWNLOAD_STATUSES, QUEUES, type SyncJob } from '@mailvault/shared';
 import { M365Provider, explainGraphError, graphConfigFromEnv, GraphError } from '@mailvault/m365';
 import { assertMailbox, invalidateAccess, mailboxScope, requirePermission } from '../auth.js';
 import { getQueue } from '../queue.js';
+import { folderOp } from '../folder-ops.js';
 
 const graphReady = () => Boolean(process.env.M365_TENANT_ID?.trim() && process.env.M365_CLIENT_ID?.trim());
 
@@ -132,18 +133,34 @@ export async function resourceRoutes(app: FastifyInstance) {
     prisma.destination.findMany({ orderBy: { name: 'asc' }, include: { _count: { select: { rules: true } } } }),
   );
 
+  // Folder checks run in the worker (the account that writes the files); see ../folder-ops.ts.
+  const testFolder = async (path: string, createIfMissing: boolean, lowSpaceThresholdMb: number) => {
+    const r = await folderOp({ op: 'test', path, createIfMissing, lowSpaceThresholdMb });
+    const check = r.ok && r.check ? r.check : { status: 'UNAVAILABLE' as const, freeMb: null, error: r.ok ? 'No result' : r.error };
+    return {
+      status: check.status,
+      freeSpaceMb: check.freeMb !== null ? BigInt(check.freeMb) : null,
+      lastError: check.error,
+      lastCheckedAt: new Date(),
+    };
+  };
+
+  /** Normalizes the path and refuses system folders / folders outside the allowed roots (400). */
+  const allowedPath = async (path: string) => {
+    try {
+      const p = normalizeFolderPath(path);
+      assertAllowed(p, (await browseRoots()).map(normalizeFolderPath));
+      return p;
+    } catch (err) {
+      throw Object.assign(new Error((err as Error).message), { statusCode: 400 });
+    }
+  };
+
   app.post('/destinations', { preHandler: requirePermission('destinations', 'create') }, async (req) => {
     const input = destinationInputSchema.parse(req.body);
-    const check = await checkFolder(input.basePath, input.createIfMissing, input.lowSpaceThresholdMb);
-    const dest = await prisma.destination.create({
-      data: {
-        ...input,
-        status: check.status,
-        freeSpaceMb: check.freeMb !== null ? BigInt(check.freeMb) : null,
-        lastError: check.error,
-        lastCheckedAt: new Date(),
-      },
-    });
+    input.basePath = await allowedPath(input.basePath);
+    const health = await testFolder(input.basePath, input.createIfMissing, input.lowSpaceThresholdMb);
+    const dest = await prisma.destination.create({ data: { ...input, ...health } });
     await audit(req.user.id, 'DESTINATION_CREATED', 'Destination', dest.id, null, input, req.ip);
     return dest;
   });
@@ -151,16 +168,31 @@ export async function resourceRoutes(app: FastifyInstance) {
   app.post('/destinations/:id/check', { preHandler: requirePermission('destinations', 'execute') }, async (req) => {
     const { id } = idParam.parse(req.params);
     const d = await prisma.destination.findUniqueOrThrow({ where: { id } });
-    const check = await checkFolder(d.basePath, d.createIfMissing, d.lowSpaceThresholdMb);
-    return prisma.destination.update({
-      where: { id },
-      data: {
-        status: check.status,
-        freeSpaceMb: check.freeMb !== null ? BigInt(check.freeMb) : null,
-        lastError: check.error,
-        lastCheckedAt: new Date(),
-      },
-    });
+    return prisma.destination.update({ where: { id }, data: await testFolder(d.basePath, d.createIfMissing, d.lowSpaceThresholdMb) });
+  });
+
+  // ─────────── Destination picker (folder names only, never files) ───────────
+  app.post('/destinations/browse', { preHandler: requirePermission('destinations', 'create') }, async (req) => {
+    const { path } = z.object({ path: z.string().max(400).nullish() }).parse(req.body ?? {});
+    return folderOp({ op: 'browse', path: path ?? null });
+  });
+
+  app.post('/destinations/test', { preHandler: requirePermission('destinations', 'create') }, async (req) => {
+    const b = z
+      .object({
+        basePath: z.string().trim().min(2).max(400),
+        createIfMissing: z.boolean().default(true),
+        lowSpaceThresholdMb: z.number().int().positive().default(1024),
+      })
+      .parse(req.body);
+    return folderOp({ op: 'test', path: b.basePath, createIfMissing: b.createIfMissing, lowSpaceThresholdMb: b.lowSpaceThresholdMb });
+  });
+
+  app.post('/destinations/mkdir', { preHandler: requirePermission('destinations', 'create') }, async (req) => {
+    const b = z.object({ parent: z.string().trim().min(2).max(400), name: z.string().trim().min(1).max(120) }).parse(req.body);
+    const r = await folderOp({ op: 'mkdir', parent: b.parent, name: b.name });
+    if (r.ok) await audit(req.user.id, 'FOLDER_CREATED', 'Destination', null, null, { path: r.created, account: r.account, via: r.via }, req.ip);
+    return r;
   });
 
   // ─────────── Rules ───────────

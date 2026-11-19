@@ -98,3 +98,5 @@ npx tsx scripts/md-to-pdf.ts <file.md> [out.pdf]  # styled PDF of a doc via Edge
 - Alerts/delivery live in packages/db/src/ops.ts (raiseAlert, resolveAlert, dispatchPending, sendDailyDigest); API watchdog (apps/api/src/watchdog.ts) also dispatches so alerts go out when the worker is down.
 - Live updates: worker calls notifyChange() -> pg_notify('mailvault_events') -> API /api/events (SSE) -> web invalidates queries.
 - Worker runs under apps/worker/src/supervisor.mjs (`npm start`): exit code 75 = restart now, crash = restart with backoff. System Status → Restart worker -> POST /api/system/worker/restart (system:execute) -> pg-boss queue `worker-control`.
+- Destination picker: core/src/node/folder-browse.ts (browse/test/mkdir, system folders blocked, Setting `destinations.browseRoots`). The API sends these to the worker via pg-boss queue `folder-ops` (notify) and waits for the job output (apps/api/src/folder-ops.ts), so checks use the worker's Windows account; falls back to the API when no worker is online.
+- iisnode/web.config removes WebDAV, which otherwise answers PUT/DELETE with 405 in IIS.

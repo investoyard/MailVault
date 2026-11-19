@@ -160,6 +160,18 @@ export function SettingsPage() {
         )}
 
         {section(
+          'Destination folders',
+          'Which server locations the folder picker shows and destinations may use. Windows system folders are always hidden.',
+          <Form.Item
+            name="destinations__browseRoots"
+            label="Allowed locations"
+            extra="Leave empty to allow every local drive. Type a path and press Enter, e.g. D:\MailVault-Files or \\fileserver\accounts."
+          >
+            <Select mode="tags" open={false} suffixIcon={null} placeholder="All local drives" tokenSeparators={[';']} className="mv-mono" />
+          </Form.Item>,
+        )}
+
+        {section(
           'Logs & retention',
           'How long records are kept. Cleanup runs nightly and is itself audited.',
           <Row gutter={16}>

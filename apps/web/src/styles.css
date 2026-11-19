@@ -888,3 +888,10 @@ body {
     animation: none;
   }
 }
+
+/* Server folder picker (components/FolderPicker.tsx) */
+.mv-folder-row:hover,
+.mv-folder-row:focus-visible {
+  background: #f6f4fc !important;
+  outline: none;
+}

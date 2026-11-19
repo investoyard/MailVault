@@ -47,6 +47,7 @@ export const QUEUES = {
   historical: 'historical-job',
   manualDownload: 'manual-download',
   workerControl: 'worker-control',
+  folderOps: 'folder-ops',
 } as const;
 
 /** Sent by the API to ask the worker to restart (System Status → Restart worker). */

@@ -14,7 +14,8 @@ import { dueMailboxes, syncMailbox } from './pipeline/sync.js';
 import { processDownloads, recoverStuckDownloads } from './pipeline/download.js';
 import { runHistoricalJob, runManualDownload } from './pipeline/historical.js';
 import { notifyChange } from './pipeline/alerts.js';
-import { dispatchPending, dispatchWebhooks, sendDailyDigest } from '@mailvault/db';
+import { browseRoots, dispatchPending, dispatchWebhooks, sendDailyDigest } from '@mailvault/db';
+import { runFolderOp, type FolderOp } from '@mailvault/core/node';
 import { checkCertificate, checkRepeatedFailures, runCleanup } from './jobs/maintenance.js';
 
 const version = (JSON.parse(readFileSync(resolve(ROOT, 'package.json'), 'utf8')) as { version: string }).version;
@@ -34,7 +35,8 @@ async function heartbeat() {
 }
 
 // pg-boss keeps its own tables in the "pgboss" schema of the MailVault database.
-const boss = new PgBoss({ connectionString: env.databaseUrl.replace(/\?.*$/, ''), schema: 'pgboss' });
+// LISTEN/NOTIFY wakes the worker at once for notify-enabled queues (the folder picker).
+const boss = new PgBoss({ connectionString: env.databaseUrl.replace(/\?.*$/, ''), schema: 'pgboss', useListenNotify: true });
 boss.on('error', (err) => log.error({ err }, 'job queue error'));
 
 let warnedNotConfigured = false;
@@ -60,6 +62,7 @@ async function main() {
   await boss.createQueue('maintenance-nightly');
   await boss.createQueue('daily-digest');
   await boss.createQueue(QUEUES.workerControl);
+  await boss.createQueue(QUEUES.folderOps, { notify: true });
   await boss.schedule('maintenance-nightly', '15 2 * * *', {}, { tz: env.timeZone });
   await boss.schedule('daily-digest', '0 8 * * *', {}, { tz: env.timeZone });
 
@@ -110,6 +113,14 @@ async function main() {
   });
 
   await boss.work(QUEUES.folderHealth, async () => runFolderHealth());
+
+  // Destination picker (browse / test / new folder) runs here, so it uses the same Windows
+  // account that writes the files. The API waits for the job output (apps/api/src/folder-ops.ts).
+  await boss.work<FolderOp>(
+    QUEUES.folderOps,
+    { localConcurrency: 4, pollingIntervalSeconds: 0.5, notifyPollingIntervalSeconds: 5 },
+    async ([job]) => (job ? runFolderOp(job.data, await browseRoots()) : undefined),
+  );
 
   // Historical jobs: one at a time, so a large backfill never crowds out live sync.
   await boss.work<HistoricalJobMsg>(QUEUES.historical, { localConcurrency: 1 }, async ([job]) => {

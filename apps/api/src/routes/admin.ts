@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { prisma, sendTestEmail, smtpSettings, type Prisma } from '@mailvault/db';
 import { requireAuth, requirePermission } from '../auth.js';
 import { audit } from './resources.js';
+import { normalizeFolderPath } from '@mailvault/core/node';
 import { getQueue } from '../queue.js';
 import { QUEUES, type WorkerControlJob } from '@mailvault/shared';
 
@@ -142,8 +143,16 @@ export async function adminRoutes(app: FastifyInstance) {
     return Object.fromEntries(rows.map((r) => [r.key, r.value]));
   });
 
-  app.put('/settings', { preHandler: requirePermission('settings', 'edit') }, async (req) => {
+  app.put('/settings', { preHandler: requirePermission('settings', 'edit') }, async (req, reply) => {
     const body = z.record(z.string(), z.unknown()).parse(req.body);
+    if ('destinations.browseRoots' in body) {
+      const roots = z.array(z.string()).nullish().parse(body['destinations.browseRoots']) ?? [];
+      try {
+        body['destinations.browseRoots'] = [...new Set(roots.map((r) => r.trim()).filter(Boolean).map(normalizeFolderPath))];
+      } catch (err) {
+        return reply.code(400).send({ error: `Allowed locations: ${(err as Error).message}` });
+      }
+    }
     const existing = await prisma.setting.findMany({ where: { key: { in: Object.keys(body) } } });
     const known = new Set(existing.map((s) => s.key));
     const unknown = Object.keys(body).filter((k) => !known.has(k));

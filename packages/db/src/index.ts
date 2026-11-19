@@ -18,3 +18,4 @@ globalForPrisma.prisma = prisma;
 export * from './ops.js';
 export * from './secrets.js';
 export * from './webhooks.js';
+export * from './folders.js';

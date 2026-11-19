@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Alert, App, Button, Card, Drawer, Form, Input, InputNumber, Space, Switch, Table, Tooltip, Typography } from 'antd';
-import { CopyOutlined, FolderOpenOutlined, PlusOutlined, SyncOutlined } from '@ant-design/icons';
+import { CopyOutlined, FolderOpenOutlined, PlusOutlined, SafetyCertificateOutlined, SyncOutlined } from '@ant-design/icons';
 import type { DestinationStatus } from '@mailvault/shared';
 import { api } from '../api';
 import { useAuth } from '../auth';
 import { DestinationStatusTag, EmptyState, PageHeader } from '../components/ui';
+import { CheckedAs, FolderPicker, type FolderOpReply } from '../components/FolderPicker';
 import { fmtBytes, fmtDateTime, fromNow } from '../format';
 
 interface Destination {
@@ -27,6 +28,30 @@ export function DestinationsPage() {
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
   const [form] = Form.useForm();
+  const [picking, setPicking] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<FolderOpReply | null>(null);
+
+  /** Runs the same write test the worker uses, before the folder is saved. */
+  const runTest = async (path?: string) => {
+    const basePath = (path ?? form.getFieldValue('basePath') ?? '').trim();
+    if (!basePath) return void message.warning('Choose or type a folder first');
+    setTesting(true);
+    setTestResult(null);
+    try {
+      setTestResult(
+        await api.post<FolderOpReply>('/api/destinations/test', {
+          basePath,
+          createIfMissing: form.getFieldValue('createIfMissing') ?? true,
+          lowSpaceThresholdMb: form.getFieldValue('lowSpaceThresholdMb') ?? 1024,
+        }),
+      );
+    } catch (e) {
+      message.error((e as Error).message);
+    } finally {
+      setTesting(false);
+    }
+  };
 
   const q = useQuery({ queryKey: ['destinations'], queryFn: () => api.get<Destination[]>('/api/destinations') });
 
@@ -37,6 +62,7 @@ export function DestinationsPage() {
       else message.success('Destination folder added and verified');
       setOpen(false);
       form.resetFields();
+      setTestResult(null);
       void qc.invalidateQueries({ queryKey: ['destinations'] });
     },
     onError: (e: Error) => message.error(e.message),
@@ -121,6 +147,7 @@ export function DestinationsPage() {
         width={520}
         open={open}
         onClose={() => setOpen(false)}
+        afterOpenChange={(o) => !o && setTestResult(null)}
         destroyOnHidden
         extra={
           <Space>
@@ -138,24 +165,46 @@ export function DestinationsPage() {
           message="Use UNC paths for network shares"
           description={
             <>
-              Mapped drives (like Z:) are not visible to Windows services. Use <span className="mv-mono">\\server\share\folder</span>, and give the MailVault service account Modify rights on it.
+              Mapped drives (like Z:) are not visible to Windows services. Use <span className="mv-mono">\\server\share\folder</span>, and give the MailVault service account Modify rights on it. <b>Browse…</b> and <b>Test folder</b> check access as that account.
             </>
           }
         />
-        <Form form={form} layout="vertical" requiredMark="optional" initialValues={{ createIfMissing: true, lowSpaceThresholdMb: 1024 }} onFinish={(v) => create.mutate(v)}>
+        <Form
+          form={form}
+          layout="vertical"
+          requiredMark="optional"
+          initialValues={{ createIfMissing: true, lowSpaceThresholdMb: 1024 }}
+          onFinish={(v) => create.mutate(v)}
+          onValuesChange={(changed) => {
+            if ('basePath' in changed || 'createIfMissing' in changed) setTestResult(null);
+          }}
+        >
           <Form.Item name="name" label="Name" rules={[{ required: true, min: 2 }]}>
             <Input placeholder="Finance – Vendor invoices" />
           </Form.Item>
-          <Form.Item
-            name="basePath"
-            label="Folder path"
-            rules={[
-              { required: true },
-              { pattern: /^([a-zA-Z]:\\|\\\\)/, message: 'Use D:\\... or \\\\server\\share\\...' },
-            ]}
-          >
-            <Input className="mv-mono" placeholder="\\fileserver\Finance\Invoices" />
+          <Form.Item label="Folder path" required style={{ marginBottom: 8 }}>
+            <Space.Compact style={{ width: '100%' }}>
+              <Form.Item
+                name="basePath"
+                noStyle
+                rules={[
+                  { required: true, message: 'Choose or type a folder' },
+                  { pattern: /^([a-zA-Z]:\\|\\\\)/, message: 'Use D:\\... or \\\\server\\share\\...' },
+                ]}
+              >
+                <Input className="mv-mono" placeholder="\\fileserver\Finance\Invoices" />
+              </Form.Item>
+              <Button icon={<FolderOpenOutlined />} onClick={() => setPicking(true)}>
+                Browse…
+              </Button>
+            </Space.Compact>
           </Form.Item>
+          <div style={{ marginBottom: 20 }}>
+            <Button size="small" icon={<SafetyCertificateOutlined />} loading={testing} onClick={() => void runTest()}>
+              Test folder
+            </Button>
+            {testResult && <FolderTestResult reply={testResult} />}
+          </div>
           <Form.Item name="lowSpaceThresholdMb" label="Low-space warning below (MB)">
             <InputNumber min={100} step={512} style={{ width: '100%' }} />
           </Form.Item>
@@ -164,6 +213,45 @@ export function DestinationsPage() {
           </Form.Item>
         </Form>
       </Drawer>
+
+      <FolderPicker
+        open={picking}
+        initialPath={form.getFieldValue('basePath')}
+        onCancel={() => setPicking(false)}
+        onSelect={(p) => {
+          setPicking(false);
+          form.setFieldsValue({ basePath: p });
+          void form.validateFields(['basePath']).catch(() => undefined);
+          void runTest(p);
+        }}
+      />
     </>
+  );
+}
+
+/** Result of "Test folder": writable + free space, or the reason it is not usable. */
+function FolderTestResult({ reply }: { reply: FolderOpReply }) {
+  const check = reply.ok ? reply.check : undefined;
+  const ok = check && check.status !== 'UNAVAILABLE';
+  const free = check?.freeMb != null ? fmtBytes(check.freeMb * 1024 * 1024) : null;
+  return (
+    <Alert
+      style={{ marginTop: 10 }}
+      type={!ok ? 'error' : check.status === 'LOW_SPACE' ? 'warning' : 'success'}
+      showIcon
+      message={
+        !ok
+          ? 'MailVault cannot save files here'
+          : check.status === 'LOW_SPACE'
+            ? `Writable, but low on space (${free} free)`
+            : `Writable · ${free} free`
+      }
+      description={
+        <div style={{ display: 'grid', gap: 4 }}>
+          {!ok && <span>{reply.ok ? check?.error : reply.error}</span>}
+          <CheckedAs reply={reply} />
+        </div>
+      }
+    />
   );
 }

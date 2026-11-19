@@ -20,6 +20,7 @@ const defaults: Record<string, unknown> = {
   'notifications.dailyDigest': true,
   'notifications.smtp': { enabled: false, host: '', port: 587, secure: false, user: '', from: '' },
   'notifications.teams.enabled': false,
+  'destinations.browseRoots': [],
 };
 
 async function main() {

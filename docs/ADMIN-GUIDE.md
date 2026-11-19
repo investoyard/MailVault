@@ -28,6 +28,8 @@ to **destination folders**. It never changes the mailbox. This guide covers day-
 
 - Use **UNC paths** (`\\server\share\folder`), never mapped drives.
 - The MailVault service account needs **Modify** rights on the folder.
+- **Browse…** shows the folders *on the server* (folder names only, never files) and can create a new folder; **Test folder** writes a test file and shows the free space. Both run in the worker, so they check access as the same Windows account that saves the files (shown under the result).
+- Windows system folders (`C:\Windows`, `Program Files`, `C:\Users`, …) are never shown or accepted. To limit the picker and destinations to chosen locations, set **Settings → Destination folders → Allowed locations** (e.g. `D:\MailVault-Files`, `\\fileserver\accounts`).
 - Folders are checked every 5 minutes. If a folder is unavailable, downloads **wait** (they don't fail) and continue automatically when it is back.
 
 ## 4. Rules
