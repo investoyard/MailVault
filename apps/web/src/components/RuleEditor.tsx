@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Alert, App, Button, Card, Col, DatePicker, Divider, Drawer, Form, Input, InputNumber, Modal, Radio, Row, Select, Skeleton, Space, Switch, Tag, Tooltip, Typography } from 'antd';
 import { BulbOutlined, ExperimentOutlined, FolderOpenOutlined, InfoCircleOutlined } from '@ant-design/icons';
 import dayjs, { type Dayjs } from 'dayjs';
-import { buildDestinationFolder, renderPattern, sanitizeFileName, PATTERN_TOKENS } from '@mailvault/core';
+import { buildDestinationFolder, renderPattern, sanitizeFileName, PATTERN_TOKENS, PATTERN_TOKEN_HELP } from '@mailvault/core';
 import type { DestinationStatus, RuleInput } from '@mailvault/shared';
 import { api } from '../api';
 import { DestinationStatusTag } from './ui';
@@ -532,7 +532,7 @@ function TokenBar({ onPick }: { onPick: (t: string) => void }) {
   return (
     <div style={{ marginTop: 6, display: 'flex', flexWrap: 'wrap', gap: 4 }}>
       {PATTERN_TOKENS.filter((t) => t !== '{OriginalName}').map((t) => (
-        <Tooltip key={t} title="Click to add">
+        <Tooltip key={t} title={`${PATTERN_TOKEN_HELP[t]} · click to add`}>
           <Tag style={{ cursor: 'pointer', fontFamily: 'Consolas, monospace', fontSize: 11.5 }} onClick={() => onPick(t)}>
             {t}
           </Tag>

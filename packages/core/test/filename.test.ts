@@ -55,6 +55,22 @@ describe('path patterns', () => {
     expect(renderPattern('{yyyy}-{MM}-{dd}', ctx)).toBe('2026-11-13');
   });
 
+  it('renders month names, quarters and the financial year', () => {
+    expect(renderPattern('{MMMM}, {yyyy}', ctx)).toBe('November, 2026');
+    expect(renderPattern('{MMM}-{yy}', ctx)).toBe('Nov-26');
+    expect(renderPattern('{Quarter} {FY} {FYQuarter}', ctx)).toBe('Q4 2026-27 Q3');
+    const at = (iso: string) => renderPattern('{MMMM} {Quarter} {FY} {FYQuarter}', { ...ctx, receivedAt: new Date(iso) });
+    expect(at('2026-04-01T00:00:00+05:30')).toBe('April Q2 2026-27 Q1');
+    expect(at('2026-03-31T23:59:00+05:30')).toBe('March Q1 2025-26 Q4');
+    expect(at('2027-01-15T10:00:00+05:30')).toBe('January Q1 2026-27 Q4');
+    expect(at('2099-12-31T10:00:00+05:30')).toBe('December Q4 2099-00 Q3');
+  });
+
+  it('keeps "April, 2026" as one folder', () => {
+    const folder = buildDestinationFolder('D:\\Out', { subfolderPattern: '{FY}\\{MMMM}, {yyyy}' }, { ...ctx, receivedAt: new Date('2026-04-07T10:00:00+05:30') });
+    expect(folder).toBe('D:\\Out\\2026-27\\April, 2026');
+  });
+
   it('sanitizes token values so subjects cannot add folders', () => {
     expect(renderPattern('{Subject}', ctx)).toBe('Invoice_ 12_2026');
   });
