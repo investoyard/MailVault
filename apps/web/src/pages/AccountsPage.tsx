@@ -238,8 +238,8 @@ export function AccountsPage() {
           type="info"
           showIcon
           style={{ marginBottom: 20 }}
-          message="Read-only by design"
-          description="MailVault only needs Mail.Read. It can never delete, move or change emails."
+          message="Before you add a mailbox"
+          description={<MailboxAccessSteps />}
         />
         <Form form={form} layout="vertical" requiredMark="optional" initialValues={{ authMode: 'APP_ONLY' }} onFinish={(v) => create.mutate(v)}>
           <Form.Item name="email" label="Mailbox address" rules={[{ required: true, type: 'email', message: 'Enter a valid email address' }]}>
@@ -286,6 +286,9 @@ export function AccountsPage() {
               description={testResult.error}
               style={{ marginBottom: 16 }}
             />
+            {!testResult.ok && testResult.error?.startsWith('Access denied') && (
+              <Alert type="info" showIcon message="How to give MailVault access to this mailbox" description={<MailboxAccessSteps afterAdding />} />
+            )}
             {testResult.ok && (
               <Descriptions column={1} size="small" bordered>
                 <Descriptions.Item label="Response time">{testResult.latencyMs} ms</Descriptions.Item>
@@ -297,5 +300,41 @@ export function AccountsPage() {
         )}
       </Modal>
     </>
+  );
+}
+
+/** Exchange group whose members MailVault may read (Exchange RBAC for Applications). */
+const MONITORED_GROUP = 'MailVault-Monitored';
+
+/** The one manual step per new mailbox: a Microsoft 365 admin adds it to the monitored group. */
+function MailboxAccessSteps({ afterAdding = false }: { afterAdding?: boolean }) {
+  return (
+    <div style={{ fontSize: 13 }}>
+      <div style={{ marginBottom: 6 }}>
+        A Microsoft 365 admin must first allow MailVault to read the mailbox (from any computer, in the browser):
+      </div>
+      <ol style={{ margin: 0, paddingLeft: 18, display: 'grid', gap: 4 }}>
+        <li>
+          Open{' '}
+          <a href="https://admin.exchange.microsoft.com/#/groups" target="_blank" rel="noreferrer">
+            Exchange admin center
+          </a>
+          , go to <b>Recipients → Groups → Mail-enabled security</b> and open <b>{MONITORED_GROUP}</b>.
+        </li>
+        <li>
+          Go to <b>Members → View all and manage members → Add members</b>, pick the mailbox and click <b>Save</b>.
+        </li>
+        <li>
+          {afterAdding ? (
+            <>Wait a few minutes (up to an hour), then run <b>Test connection</b> again.</>
+          ) : (
+            <>Add the mailbox here, then choose <b>⋯ → Test connection</b> in its row.</>
+          )}
+        </li>
+      </ol>
+      <div className="mv-muted" style={{ marginTop: 6, fontSize: 12.5 }}>
+        Access is read-only: MailVault can never delete, move or change emails.
+      </div>
+    </div>
   );
 }
