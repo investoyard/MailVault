@@ -41,6 +41,16 @@ Download Rules → *New rule*:
 2. **Which emails**: sender (`name@x.com` or `*@x.com`), *never from*, To, CC, subject, keywords (any/all), optional body text and date range. All filled-in conditions must match.
 3. **Which attachments**: all or selected file types, name contains / excludes, size limits.
 4. **Where to save**: destination folder + subfolder pattern (click the placeholders), file name, duplicate handling (*Smart* is recommended).
+   File name examples (email received 7 Apr 2026, saved 19 Nov 2026, attachment `Statement.zip`):
+
+   | Pattern | Saved as |
+   |---|---|
+   | `{OriginalName}` (default) | `Statement.zip` |
+   | `{BaseName}_{Date:dd-MM-yyyy}` | `Statement_07-04-2026.zip` |
+   | `{Date:dd-MMM-yyyy} {BaseName}` | `07-Apr-2026 Statement.zip` |
+   | `{BaseName}_{Today:yyyyMMdd}` | `Statement_20261119.zip` |
+
+   `{Date:…}` is the email's received date, `{Today:…}` the day the file is saved. Formats use `yyyy yy MMMM MMM MM M dd d HH mm ss` with `- _ . space ,` between them; the extension is added automatically. Unknown placeholders are flagged before you can save.
 5. Watch the **Example save location** on the right, then **Test on the last 14 days of email**.
 6. New rules can start in **Simulation**: History shows "would save to …" without writing files.
 

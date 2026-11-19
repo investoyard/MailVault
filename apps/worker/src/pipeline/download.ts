@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { Transform, type Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import { acceptInnerFile, buildDestinationFolder, containerKindOf, renderPattern, sanitizeFileName, type AttachmentInfo, type ContainerKind } from '@mailvault/core';
+import { acceptInnerFile, buildDestinationFolder, buildFileName, containerKindOf, type AttachmentInfo, type ContainerKind } from '@mailvault/core';
 import { DEFAULT_LIMITS, ExtractError, FileTooLargeError, assertRootExists, explainFsError, extractToTemp, saveAttachment } from '@mailvault/core/node';
 import { emitWebhookEvent, prisma, type DuplicatePolicy, type Prisma } from '@mailvault/db';
 import { GraphError, explainGraphError } from '@mailvault/m365';
@@ -140,14 +140,8 @@ async function downloadOne(id: string, ctx: PipelineContext, settings: PipelineS
     };
     const folder = buildDestinationFolder(dest.basePath, cfg, pctx);
     const original = row.finalFileName ?? row.attachment.name;
-    const pattern = cfg.fileNamePattern?.trim() || '{OriginalName}';
-    const targetName = (orig: string) => {
-      let name = sanitizeFileName(pattern === '{OriginalName}' ? orig : renderPattern(pattern, { ...pctx, originalName: orig }));
-      // Patterns like "{yyyyMMdd}_{OriginalName}" already include the extension; add it if a pattern dropped it.
-      const ext = orig.includes('.') ? orig.slice(orig.lastIndexOf('.')) : '';
-      if (ext && !name.toLowerCase().endsWith(ext.toLowerCase())) name = sanitizeFileName(name + ext);
-      return name;
-    };
+    const savedAt = ctx.now();
+    const targetName = (orig: string) => buildFileName(cfg.fileNamePattern, orig, { ...pctx, now: savedAt });
     const fileName = targetName(original);
     const saveOpts = { folder, policy: rule.duplicatePolicy, fileDate: cfg.setFileDateToReceived ? message.receivedAt : undefined, maxBytes: settings.maxSizeMb * 1024 * 1024 };
 

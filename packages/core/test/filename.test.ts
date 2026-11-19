@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { fileExtension, numberedFileName, sanitizeFileName } from '../src/filename.js';
-import { buildDestinationFolder, renderPattern } from '../src/path-pattern.js';
+import { buildDestinationFolder, buildFileName, renderPattern, unknownTokens } from '../src/path-pattern.js';
 
 describe('sanitizeFileName', () => {
   it('keeps normal names', () => {
@@ -69,6 +69,31 @@ describe('path patterns', () => {
   it('keeps "April, 2026" as one folder', () => {
     const folder = buildDestinationFolder('D:\\Out', { subfolderPattern: '{FY}\\{MMMM}, {yyyy}' }, { ...ctx, receivedAt: new Date('2026-04-07T10:00:00+05:30') });
     expect(folder).toBe('D:\\Out\\2026-27\\April, 2026');
+  });
+
+  it('renders custom date formats for the email date and today', () => {
+    const now = new Date('2026-11-19T04:00:00Z'); // 09:30 on 19 Nov in IST
+    expect(renderPattern('{Date:dd-MM-yyyy}', ctx)).toBe('13-11-2026');
+    expect(renderPattern('{Date:dd-MMM-yyyy} {Date:d MMMM yy}', ctx)).toBe('13-Nov-2026 13 November 26');
+    expect(renderPattern('{Date:yyyyMMdd_HHmmss}', ctx)).toBe('20261113_010000');
+    expect(renderPattern('{Today:dd.MM.yyyy} {Today}', { ...ctx, now })).toBe('19.11.2026 20261119');
+    // Slashes would create folders; they are not allowed in a format, so the token stays visible as a typo.
+    expect(renderPattern('{Date:dd/MM}', ctx)).toBe('{Date:dd/MM}');
+  });
+
+  it('builds file names and keeps the extension', () => {
+    const at = { ...ctx, now: new Date('2026-11-19T04:00:00Z') };
+    expect(buildFileName('{OriginalName}', 'INV 1042.pdf', at)).toBe('INV 1042.pdf');
+    expect(buildFileName('', 'INV 1042.pdf', at)).toBe('INV 1042.pdf');
+    expect(buildFileName('{BaseName}_{Date:dd-MM-yyyy}', 'Statement.zip', at)).toBe('Statement_13-11-2026.zip');
+    expect(buildFileName('{Today:yyyy-MM-dd}_{OriginalName}', 'a.PDF', at)).toBe('2026-11-19_a.PDF');
+    expect(buildFileName('{BaseName}.{Ext}', 'x.tar.gz', at)).toBe('x.tar.gz');
+    expect(buildFileName('Report {MMMM} {yyyy}', 'r.xlsx', at)).toBe('Report November 2026.xlsx');
+  });
+
+  it('lists unknown placeholders', () => {
+    expect(unknownTokens('{BaseName}_{Date:dd-MM-yyyy}_{Today:HHmm}')).toEqual([]);
+    expect(unknownTokens('{yyy}_{Date:dd/MM}_{Foo:dd}')).toEqual(['{yyy}', '{Date:dd/MM}', '{Foo:dd}']);
   });
 
   it('sanitizes token values so subjects cannot add folders', () => {

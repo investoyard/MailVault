@@ -9,6 +9,8 @@ export interface PatternContext {
   ruleName: string;
   mailbox: string;
   originalName?: string;
+  /** "Today" for {Today…} tokens: when the file is saved. Defaults to the current time. */
+  now?: Date;
 }
 
 function zonedParts(date: Date, timeZone: string) {
@@ -32,7 +34,8 @@ export const PATTERN_TOKENS = [
   '{yyyy}', '{yy}', '{MM}', '{MMM}', '{MMMM}', '{dd}', '{yyyyMMdd}', '{HHmmss}',
   '{Quarter}', '{FY}', '{FYQuarter}',
   '{SenderEmail}', '{SenderDomain}', '{SenderName}',
-  '{Subject}', '{RuleName}', '{Mailbox}', '{OriginalName}',
+  '{Subject}', '{RuleName}', '{Mailbox}', '{OriginalName}', '{BaseName}', '{Ext}',
+  '{Today}',
 ] as const;
 export type PatternToken = (typeof PATTERN_TOKENS)[number];
 
@@ -55,8 +58,56 @@ export const PATTERN_TOKEN_HELP: Record<PatternToken, string> = {
   '{Subject}': 'Email subject (first 60 characters)',
   '{RuleName}': 'Name of this rule',
   '{Mailbox}': 'Mailbox address',
-  '{OriginalName}': 'Original attachment name',
+  '{OriginalName}': 'Original attachment name with extension: INV-1042.pdf',
+  '{BaseName}': 'Original name without extension: INV-1042',
+  '{Ext}': 'File extension: pdf',
+  '{Today}': 'Date the file is saved (not the email date): 20261119',
 };
+
+/** Characters a custom date format may use: yyyy yy MMMM MMM MM M dd d HH mm ss and separators. */
+const DATE_FORMAT = /^[yMdHms\-_. ,]+$/;
+const DATE_PART = /yyyy|yy|MMMM|MMM|MM|M|dd|d|HH|mm|ss/g;
+
+/**
+ * Ready-made date formats offered as clickable tags. {Date:…} uses the email's received date,
+ * {Today:…} the date the file is saved. Any combination of the parts is allowed.
+ */
+export const DATE_FORMAT_PRESETS = ['dd-MM-yyyy', 'yyyy-MM-dd', 'ddMMyyyy', 'dd.MM.yyyy', 'dd-MMM-yyyy', 'dd MMMM yyyy', 'MMM-yyyy', 'yyyyMMdd_HHmm'] as const;
+export const DATE_FORMAT_PARTS_HELP = 'yyyy 2026 · yy 26 · MMMM April · MMM Apr · MM 04 · M 4 · dd 07 · d 7 · HH 14 · mm 30 · ss 05';
+
+/** Formats a date in the business time zone, e.g. formatDate(d, 'dd-MMM-yyyy', tz) = "07-Apr-2026". */
+export function formatDate(date: Date, format: string, timeZone: string): string {
+  const d = zonedParts(date, timeZone);
+  const month = Number(d.MM);
+  const parts: Record<string, string> = {
+    yyyy: d.yyyy,
+    yy: d.yyyy.slice(-2),
+    MMMM: MONTHS[month - 1]!,
+    MMM: MONTHS[month - 1]!.slice(0, 3),
+    MM: d.MM,
+    M: String(month),
+    dd: d.dd,
+    d: String(Number(d.dd)),
+    HH: d.HH,
+    mm: d.mm,
+    ss: d.ss,
+  };
+  return format.replace(DATE_PART, (p) => parts[p] ?? p);
+}
+
+const TOKEN = /\{(\w+)(?::([^{}]*))?\}/g;
+
+/** Tokens in a pattern that MailVault does not know (typos), for a warning in the rule editor. */
+export function unknownTokens(pattern: string): string[] {
+  const known = new Set<string>(PATTERN_TOKENS.map((t) => t.slice(1, -1)));
+  const bad: string[] = [];
+  for (const m of pattern.matchAll(TOKEN)) {
+    const [whole, key, fmt] = m;
+    const ok = fmt !== undefined ? (key === 'Date' || key === 'Today') && DATE_FORMAT.test(fmt) : known.has(key!);
+    if (!ok) bad.push(whole);
+  }
+  return bad;
+}
 
 /**
  * Replaces tokens in a folder or file-name pattern. Each token value is sanitized,
@@ -89,11 +140,37 @@ export function renderPattern(pattern: string, ctx: PatternContext): string {
     RuleName: ctx.ruleName,
     Mailbox: ctx.mailbox.toLowerCase(),
     OriginalName: ctx.originalName ?? '',
+    BaseName: baseName(ctx.originalName ?? ''),
+    Ext: extOf(ctx.originalName ?? ''),
+    Today: formatDate(ctx.now ?? new Date(), 'yyyyMMdd', ctx.timeZone),
   };
-  return pattern.replace(/\{(\w+)\}/g, (match, key: string) =>
+  return pattern.replace(TOKEN, (match, key: string, fmt?: string) => {
+    let value: string | undefined;
+    if (fmt !== undefined) {
+      if ((key === 'Date' || key === 'Today') && DATE_FORMAT.test(fmt)) {
+        value = formatDate(key === 'Date' ? ctx.receivedAt : (ctx.now ?? new Date()), fmt, ctx.timeZone);
+      }
+    } else if (key in values) value = values[key];
     // Slashes inside a value are content (e.g. "12/2026"), not folders: replace them before sanitizing.
-    key in values ? sanitizeFileName((values[key] ?? '').replace(/[\\/]/g, '_'), 80, '_') : match,
-  );
+    return value === undefined ? match : sanitizeFileName(value.replace(/[\\/]/g, '_'), 80, '_');
+  });
+}
+
+const extOf = (name: string) => (name.includes('.') ? name.slice(name.lastIndexOf('.') + 1) : '');
+const baseName = (name: string) => (name.includes('.') ? name.slice(0, name.lastIndexOf('.')) : name);
+
+/**
+ * Final file name for an attachment from the rule's file-name pattern.
+ * The original extension is added when the pattern does not end with it,
+ * so "{BaseName}_{Date:dd-MM-yyyy}" gives "INV-1042_07-04-2026.pdf".
+ */
+export function buildFileName(pattern: string | undefined, original: string, ctx: PatternContext): string {
+  const p = pattern?.trim() || '{OriginalName}';
+  if (p === '{OriginalName}') return sanitizeFileName(original);
+  let name = sanitizeFileName(renderPattern(p, { ...ctx, originalName: original }));
+  const ext = extOf(original);
+  if (ext && !name.toLowerCase().endsWith(`.${ext.toLowerCase()}`)) name = sanitizeFileName(`${name}.${ext}`);
+  return name;
 }
 
 /**

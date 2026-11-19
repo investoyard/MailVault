@@ -3,7 +3,17 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Alert, App, Button, Card, Col, DatePicker, Divider, Drawer, Form, Input, InputNumber, Modal, Radio, Row, Select, Skeleton, Space, Switch, Tag, Tooltip, Typography } from 'antd';
 import { BulbOutlined, ExperimentOutlined, FolderOpenOutlined, InfoCircleOutlined } from '@ant-design/icons';
 import dayjs, { type Dayjs } from 'dayjs';
-import { buildDestinationFolder, renderPattern, sanitizeFileName, PATTERN_TOKENS, PATTERN_TOKEN_HELP } from '@mailvault/core';
+import {
+  buildDestinationFolder,
+  buildFileName,
+  formatDate,
+  unknownTokens,
+  DATE_FORMAT_PARTS_HELP,
+  DATE_FORMAT_PRESETS,
+  PATTERN_TOKENS,
+  PATTERN_TOKEN_HELP,
+  type PatternToken,
+} from '@mailvault/core';
 import type { DestinationStatus, RuleInput } from '@mailvault/shared';
 import { api } from '../api';
 import { DestinationStatusTag } from './ui';
@@ -169,9 +179,7 @@ export function RuleEditor({ open, rule, onClose }: { open: boolean; rule: RuleR
     const ext = values.attachments?.mode === 'SELECTED' && values.attachments.extensions?.[0] ? values.attachments.extensions[0] : 'pdf';
     const original = `INV-1042.${ext}`;
     const folder = buildDestinationFolder(dest?.basePath ?? 'D:\\Destination', values.download, ctx);
-    const pattern = values.download.fileNamePattern?.trim() || '{OriginalName}';
-    let file = sanitizeFileName(pattern === '{OriginalName}' ? original : renderPattern(pattern, { ...ctx, originalName: original }));
-    if (!file.toLowerCase().endsWith(`.${ext}`)) file += `.${ext}`;
+    const file = buildFileName(values.download.fileNamePattern, original, ctx);
     return { folder, file, sample, dest };
   }, [values, destinations.data, mailboxes.data]);
 
@@ -408,7 +416,12 @@ export function RuleEditor({ open, rule, onClose }: { open: boolean; rule: RuleR
                   }))}
                 />
               </Form.Item>
-              <Form.Item name={['download', 'subfolderPattern']} label="Subfolder pattern" extra={<TokenBar onPick={(t) => insertToken('subfolderPattern', t)} />}>
+              <Form.Item
+                name={['download', 'subfolderPattern']}
+                label="Subfolder pattern"
+                rules={[patternRule]}
+                extra={<TokenBar onPick={(t) => insertToken('subfolderPattern', t)} />}
+              >
                 <Input className="mv-mono" placeholder="{SenderDomain}\{yyyy}\{MM}" />
               </Form.Item>
               <Row gutter={16}>
@@ -424,12 +437,16 @@ export function RuleEditor({ open, rule, onClose }: { open: boolean; rule: RuleR
                 </Col>
               </Row>
               <Divider style={{ margin: '12px 0 16px' }} />
+              <Form.Item
+                name={['download', 'fileNamePattern']}
+                label="File name"
+                rules={[patternRule]}
+                tooltip="{OriginalName} keeps the attachment's name. The extension (.pdf, .zip …) is added automatically when the pattern does not end with it."
+                extra={<TokenBar forFileName onPick={(t) => insertToken('fileNamePattern', t)} />}
+              >
+                <Input className="mv-mono" placeholder="{BaseName}_{Date:dd-MM-yyyy}" />
+              </Form.Item>
               <Row gutter={16}>
-                <Col span={12}>
-                  <Form.Item name={['download', 'fileNamePattern']} label="File name" tooltip="{OriginalName} keeps the attachment's name. Example: {yyyyMMdd}_{OriginalName}">
-                    <Input className="mv-mono" />
-                  </Form.Item>
-                </Col>
                 <Col span={12}>
                   <Form.Item name={['download', 'duplicatePolicy']} label="If the file already exists">
                     <Select
@@ -528,16 +545,56 @@ export function RuleEditor({ open, rule, onClose }: { open: boolean; rule: RuleR
   );
 }
 
-function TokenBar({ onPick }: { onPick: (t: string) => void }) {
+/** Form rule: flags typos such as {yyy} or {Date:dd/MM} that would otherwise stay in the name as text. */
+const patternRule = {
+  validator: async (_: unknown, v?: string) => {
+    const bad = v ? unknownTokens(v) : [];
+    if (bad.length) throw new Error(`Unknown placeholder ${bad.join(', ')}. Click a tag below to insert a valid one.`);
+  },
+};
+
+const FILE_TOKENS: PatternToken[] = ['{OriginalName}', '{BaseName}', '{Ext}'];
+const tagStyle = { cursor: 'pointer', fontFamily: 'Consolas, monospace', fontSize: 11.5, marginInlineEnd: 0 } as const;
+const EXAMPLE_DATE = new Date('2026-04-07T14:30:05+05:30');
+
+function TokenGroup({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div style={{ marginTop: 6, display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-      {PATTERN_TOKENS.filter((t) => t !== '{OriginalName}').map((t) => (
-        <Tooltip key={t} title={`${PATTERN_TOKEN_HELP[t]} · click to add`}>
-          <Tag style={{ cursor: 'pointer', fontFamily: 'Consolas, monospace', fontSize: 11.5 }} onClick={() => onPick(t)}>
-            {t}
-          </Tag>
-        </Tooltip>
-      ))}
+    <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 4 }}>
+      <span className="mv-muted" style={{ fontSize: 12, width: 110, flex: 'none' }}>{label}</span>
+      {children}
+    </div>
+  );
+}
+
+function TokenBar({ onPick, forFileName }: { onPick: (t: string) => void; forFileName?: boolean }) {
+  const token = (t: string, help: string) => (
+    <Tooltip key={t} title={`${help} · click to add`}>
+      <Tag style={tagStyle} onClick={() => onPick(t)}>{t}</Tag>
+    </Tooltip>
+  );
+  const dateTag = (kind: 'Date' | 'Today', f: string) =>
+    token(`{${kind}:${f}}`, `${kind === 'Date' ? 'Email received date' : 'Date the file is saved'}: ${formatDate(EXAMPLE_DATE, f, 'Asia/Kolkata')}`);
+  const simple = PATTERN_TOKENS.filter((t) => !FILE_TOKENS.includes(t) && t !== '{Today}');
+  const dateTokens = simple.slice(0, simple.indexOf('{SenderEmail}'));
+  const emailTokens = simple.slice(simple.indexOf('{SenderEmail}'));
+  return (
+    <div style={{ marginTop: 6, display: 'grid', gap: 6 }}>
+      {forFileName && <TokenGroup label="Attachment">{FILE_TOKENS.map((t) => token(t, PATTERN_TOKEN_HELP[t]))}</TokenGroup>}
+      <TokenGroup label="Email date">
+        {dateTokens.map((t) => token(t, PATTERN_TOKEN_HELP[t]))}
+        {forFileName && DATE_FORMAT_PRESETS.map((f) => dateTag('Date', f))}
+      </TokenGroup>
+      {forFileName && (
+        <TokenGroup label="Today (saved)">
+          {token('{Today}', PATTERN_TOKEN_HELP['{Today}'])}
+          {DATE_FORMAT_PRESETS.slice(0, 5).map((f) => dateTag('Today', f))}
+        </TokenGroup>
+      )}
+      <TokenGroup label="Email">{emailTokens.map((t) => token(t, PATTERN_TOKEN_HELP[t]))}</TokenGroup>
+      <div className="mv-muted" style={{ fontSize: 12 }}>
+        Your own date format: <span className="mv-mono">{'{Date:dd-MM-yyyy}'}</span> (email date) or{' '}
+        <span className="mv-mono">{'{Today:dd-MM-yyyy}'}</span> (save date), using {DATE_FORMAT_PARTS_HELP} and - _ . space , as separators.
+      </div>
     </div>
   );
 }
