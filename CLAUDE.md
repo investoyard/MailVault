@@ -70,6 +70,11 @@ npx tsx scripts/md-to-pdf.ts <file.md> [out.pdf]  # styled PDF of a doc via Edge
 - Store email **metadata only**, never bodies. Stream attachments to disk; never buffer whole files.
 - Write files to `<folder>\.mailvault-tmp\*.part`, then move into place (no half-written files).
 - Sanitize every file/folder name with `sanitizeFileName`; pattern tokens via `renderPattern`.
+  File names only via `buildFileName` (core/src/path-pattern.ts, shared by worker + rule editor preview): the pattern is the
+  name *without* extension, the original extension is appended once (`{OriginalName}` in a longer pattern = base name,
+  trailing `{Ext}` dropped). Date tokens: `{Date:<fmt>}` = received date, `{Today:<fmt>}` = save date (`ctx.now`),
+  fmt parts `yyyy yy MMMM MMM MM M dd d HH mm ss` + `- _ . space ,`; `{FY}`/`{FYQuarter}` = Indian April–March year.
+  New tokens go in `PATTERN_TOKENS` + `PATTERN_TOKEN_HELP`; `unknownTokens()` drives the editor's validation.
 - Dates for folders/"today" use the business time zone (`BUSINESS_TIMEZONE`, default Asia/Kolkata).
 - API: every route has a `requirePermission(module, action)` guard; validate input with zod; write `audit()`.
 - UI: light theme, Ant Design components, `PageHeader` + `mv-card` cards, friendly empty states, plain-English labels.
@@ -100,3 +105,11 @@ npx tsx scripts/md-to-pdf.ts <file.md> [out.pdf]  # styled PDF of a doc via Edge
 - Worker runs under apps/worker/src/supervisor.mjs (`npm start`): exit code 75 = restart now, crash = restart with backoff. System Status → Restart worker -> POST /api/system/worker/restart (system:execute) -> pg-boss queue `worker-control`.
 - Destination picker: core/src/node/folder-browse.ts (browse/test/mkdir, system folders blocked, Setting `destinations.browseRoots`). The API sends these to the worker via pg-boss queue `folder-ops` (notify) and waits for the job output (apps/api/src/folder-ops.ts), so checks use the worker's Windows account; falls back to the API when no worker is online.
 - iisnode/web.config removes WebDAV, which otherwise answers PUT/DELETE with 405 in IIS.
+- Mailbox access = Exchange RBAC for Applications (not tenant-wide Mail.Read): service principal + scope "MailVault Mailboxes"
+  on mail-enabled security group `MailVault-Monitored` + role "Application Mail.Read". New mailboxes: add them to that group in
+  the Exchange admin center (steps shown in AccountsPage `MailboxAccessSteps`). Diagnose/repair: scripts/check-exchange-rbac.ps1 [-Fix]
+  (run by the tenant admin; never sign in for the user).
+- Sync History (Monitoring): GET /api/sync-runs (apps/api/src/routes/sync-runs.ts, permission module `syncHistory`) over `SyncRun`
+  (`newMessages` stored by worker pipeline/sync.ts); no finish time after 15 min = STOPPED.
+- Deploy on this server: `npm run build:api && npm run build:web`, touch `iisnode/restart.txt` (never commit it), restart the worker
+  via POST /api/system/worker/restart. Schema changes: write the migration SQL, then `npm run db:deploy`.
