@@ -18,6 +18,8 @@ notifications, users/roles and audit logs. Runs on the company's Windows Server 
 - Web: React 19 + Vite 7 + **Ant Design 5** (+ `@ant-design/v5-patch-for-react-19`) + TanStack Query + Recharts
 - Validation: **zod 4** schemas in `packages/shared`, used by API and web
 - Tests: Vitest; UI screenshots via `playwright-core` with the installed **Edge** (`channel: 'msedge'`)
+- Files: **qpdf** CLI (PDF passwords, `QPDF_PATH`), **@zip.js/zip.js** (protected ZIPs), yauzl/mailparser/msgreader (unpacking),
+  installed **Edge** via playwright-core in the worker (email to PDF)
 - Hosting: website/API in IIS via **iisnode** (site path iisnode/, entry iisnode/server.cjs, PORT = named pipe); Worker as Windows Task Scheduler task (scripts/install-service.ps1). Alternative: IIS reverse proxy (iis/) + install-service -IncludeApi
 
 ## Layout
@@ -27,8 +29,8 @@ apps/api      Fastify API (src/routes/*), also serves apps/web/dist in productio
 apps/worker   Background service: pg-boss jobs, mailbox sync, rule matching, downloads, folder health
 apps/web      React admin panel (pages/, components/ui.tsx, layout/AppLayout.tsx, theme.ts)
 packages/shared  enums, zod schemas, permission matrix (browser-safe)
-packages/core    pure logic: rule engine, attachment filter, file names, path patterns (browser-safe)
-packages/core/src/node  Node-only helpers (folder check, safe file writer) -> import "@mailvault/core/node"
+packages/core    pure logic: rule engine, attachment filter, file names, path patterns, email-html (browser-safe)
+packages/core/src/node  Node-only helpers (folder check/browse, safe file writer, extract, unlock) -> import "@mailvault/core/node"
 packages/db      Prisma schema + migrations + seeds; exports `prisma`
 packages/m365    Graph client + M365Provider
 ```
@@ -67,7 +69,8 @@ npx tsx scripts/md-to-pdf.ts <file.md> [out.pdf]  # styled PDF of a doc via Edge
 
 ## Conventions
 
-- Store email **metadata only**, never bodies. Stream attachments to disk; never buffer whole files.
+- Store email **metadata only**, never bodies (the email-PDF feature fetches the body at save time and writes it only into
+  the PDF). Stream attachments to disk; never buffer whole files.
 - Write files to `<folder>\.mailvault-tmp\*.part`, then move into place (no half-written files).
 - Sanitize every file/folder name with `sanitizeFileName`; pattern tokens via `renderPattern`.
   File names only via `buildFileName` (core/src/path-pattern.ts, shared by worker + rule editor preview): the pattern is the
@@ -88,6 +91,12 @@ npx tsx scripts/md-to-pdf.ts <file.md> [out.pdf]  # styled PDF of a doc via Edge
 - The Claude built-in browser pane cannot open localhost here; use `tests/e2e/screenshots.ts` for visual checks.
 - `.env` holds DB password, `JWT_SECRET`, `SECRET_ENC_KEY`, `DEV_ADMIN_PASSWORD`; never commit it or print secrets.
 - Windows services can't see mapped drives: destinations must be local paths or UNC.
+- Live site: http://mailvault.finwave.co (IIS + iisnode); worker = Task Scheduler task MailVault-Worker running as SYSTEM.
+  qpdf lives in `D:\Investoyard\.tools\qpdf` (next to pgsql); `.env` has `QPDF_PATH=D:/Investoyard/.tools/qpdf/bin/qpdf.exe`.
+- Shell pitfalls here: Git Bash heredocs/printf and `node -e` strings eat backslashes (`\b` became a backspace in .env):
+  write Windows paths with forward slashes, and do multi-line source edits with the Edit/Write tools or a script file.
+  `git stash` round-trips rewrite files with CRLF; normalise line endings (`.replace(/\r\n/g, '\n')`) before string-matching in scripts.
+- Integration tests that pin `ctx.now` to a fixed clock must derive times from that clock, never from `Date.now()`.
 
 ## Status
 
@@ -98,6 +107,8 @@ npx tsx scripts/md-to-pdf.ts <file.md> [out.pdf]  # styled PDF of a doc via Edge
 - Phase 4 (hardening): CSP/headers + Origin guard in apps/api/src/server.ts, npm run preflight, backup/restore scripts, drills + load test, docs/GO-LIVE.md, SECURITY.md, ADMIN-GUIDE.md, USER-GUIDE.md. Remaining: install on server + pilot (needs IT).
 - Prisma 7: `prisma migrate dev` no longer runs generate; the npm scripts `db:migrate`/`db:deploy` run `prisma generate` afterwards. Prisma no longer reads .env itself (prisma.config.ts and src/load-env.ts load it).
 - Phase 5: ZIP/attached-email extraction (core/src/node/extract.ts, ExtractedFile model), outbound webhooks (packages/db/src/webhooks.ts, Integrations page, docs/WEBHOOKS.md).
+- Phase 6 (done, live, checked by the user): folder picker + worker-run folder tests, Sync History, date tokens/file-name
+  patterns, password removal for PDF/ZIP, email saved as PDF, rule editor as a full page. Mailbox access via Exchange RBAC.
 - Windows PowerShell 5.1 strips double quotes from native args: pass SQL to psql via a temp file (-f), as restore-db.ps1 does.
 - Access control: requireAuth loads role/permissions/mailboxIds from DB per request (10 s cache, invalidateAccess on change). Use mailboxScope()/assertMailbox() in every route touching mailbox data.
 - Alerts/delivery live in packages/db/src/ops.ts (raiseAlert, resolveAlert, dispatchPending, sendDailyDigest); API watchdog (apps/api/src/watchdog.ts) also dispatches so alerts go out when the worker is down.
