@@ -7,9 +7,9 @@ import { CopyOutlined, DownloadOutlined, FileExcelOutlined, MailOutlined, Profil
 import { EmailDetailsModal } from '../components/EmailDetailsModal';
 import { useAuth } from '../auth';
 import type { Dayjs } from 'dayjs';
-import { DOWNLOAD_STATUSES, DOWNLOAD_STATUS_LABELS, type DownloadStatus } from '@mailvault/shared';
+import { DOWNLOAD_STATUSES, DOWNLOAD_STATUS_LABELS, type DownloadStatus, type FileProtection } from '@mailvault/shared';
 import { api, qs } from '../api';
-import { DownloadStatusTag, EmptyState, PageHeader } from '../components/ui';
+import { DownloadStatusTag, EmptyState, PageHeader, ProtectionTag } from '../components/ui';
 import { useConfirm } from '../components/confirm';
 import { fmtBytes, fmtDateTime, fmtNumber, fmtShort } from '../format';
 
@@ -24,8 +24,9 @@ interface Row {
   downloadedAt: string | null;
   createdAt: string;
   sha256: string | null;
-  extracted: { id: string; innerPath: string; fileName: string | null; status: DownloadStatus; reason: string | null; destinationPath: string | null; bytes: number | null }[];
-  attachment: { name: string; sizeBytes: number; contentType: string | null };
+  protection: FileProtection | null;
+  extracted: { id: string; innerPath: string; fileName: string | null; status: DownloadStatus; reason: string | null; destinationPath: string | null; bytes: number | null; protection: FileProtection | null }[];
+  attachment: { name: string; sizeBytes: number; contentType: string | null; kind: string };
   match: {
     correlationId: string;
     trigger: string;
@@ -41,6 +42,9 @@ interface Row {
     };
   };
 }
+
+/** Failed/waiting downloads, and files that were saved with their password (Retry unlocks them). */
+const canRetry = (r: Row) => ['FAILED', 'WAITING_DESTINATION', 'RETRYING'].includes(r.status) || (r.status === 'SUCCESS' && r.protection === 'STILL_LOCKED');
 
 interface Resp {
   total: number;
@@ -191,7 +195,7 @@ export function HistoryPage() {
               ? {
                   selectedRowKeys: picked,
                   onChange: (k) => setPicked(k as string[]),
-                  getCheckboxProps: (r) => ({ disabled: !['FAILED', 'WAITING_DESTINATION', 'RETRYING'].includes(r.status) }),
+                  getCheckboxProps: (r) => ({ disabled: !canRetry(r) }),
                 }
               : undefined
           }
@@ -220,6 +224,8 @@ export function HistoryPage() {
                     {r.finalFileName ?? r.attachment.name}
                   </Typography.Text>
                   <span className="mv-muted" style={{ fontSize: 12.5 }}>{fmtBytes(r.attachment.sizeBytes)}</span>
+                  {r.attachment.kind === 'EMAIL_BODY' && <Tag style={{ marginLeft: 6 }} color="purple" icon={<MailOutlined />}>Email PDF</Tag>}
+                  <ProtectionTag value={r.protection} style={{ marginLeft: 6 }} />
                   {r.extracted.length > 0 && (
                     <Tag style={{ marginLeft: 6 }} color="purple">
                       {r.extracted.filter((x) => x.status === 'SUCCESS').length} of {r.extracted.length} inside saved
@@ -298,7 +304,7 @@ export function HistoryPage() {
                         </div>
                       ),
                     },
-                    { title: 'Result', width: 210, render: (_, x) => (x.reason ? <Tooltip title={x.reason}><span><DownloadStatusTag status={x.status} /></span></Tooltip> : <DownloadStatusTag status={x.status} />) },
+                    { title: 'Result', width: 230, render: (_, x) => <Space size={4} wrap>{x.reason ? <Tooltip title={x.reason}><span><DownloadStatusTag status={x.status} /></span></Tooltip> : <DownloadStatusTag status={x.status} />}<ProtectionTag value={x.protection} /></Space> },
                     {
                       title: '',
                       width: 44,
@@ -319,7 +325,8 @@ export function HistoryPage() {
               <Descriptions.Item label="Original name">{selected.attachment.name}</Descriptions.Item>
               <Descriptions.Item label="Saved as">{selected.finalFileName ?? '—'}</Descriptions.Item>
               <Descriptions.Item label="Size">{fmtBytes(selected.attachment.sizeBytes)}</Descriptions.Item>
-              <Descriptions.Item label="Type">{selected.attachment.contentType ?? '—'}</Descriptions.Item>
+              <Descriptions.Item label="Type">{selected.attachment.kind === 'EMAIL_BODY' ? 'The email itself, saved as PDF' : (selected.attachment.contentType ?? '—')}</Descriptions.Item>
+              {selected.protection && <Descriptions.Item label="Password"><ProtectionTag value={selected.protection} showNone /></Descriptions.Item>}
               <Descriptions.Item label="Rule">{selected.match.rule.name} <Tag style={{ marginLeft: 6 }}>{selected.match.trigger}</Tag></Descriptions.Item>
               <Descriptions.Item label="Attempts">{selected.attempts}</Descriptions.Item>
               <Descriptions.Item label="Downloaded">{fmtDateTime(selected.downloadedAt)}</Descriptions.Item>
@@ -347,10 +354,12 @@ export function HistoryPage() {
                   Save a copy
                 </Button>
               )}
-              {['FAILED', 'WAITING_DESTINATION', 'RETRYING'].includes(selected.status) && (
-                <Button type="primary" icon={<RedoOutlined />} loading={retry.isPending} onClick={() => retry.mutate(selected.id)}>
-                  Retry now
-                </Button>
+              {canRetry(selected) && (
+                <Tooltip title={selected.protection === 'STILL_LOCKED' && selected.status === 'SUCCESS' ? 'Tries the rule’s passwords again and replaces the saved copy with an unlocked one' : undefined}>
+                  <Button type="primary" icon={<RedoOutlined />} loading={retry.isPending} onClick={() => retry.mutate(selected.id)}>
+                    {selected.status === 'SUCCESS' ? 'Retry unlocking' : 'Retry now'}
+                  </Button>
+                </Tooltip>
               )}
               {selected.status === 'AWAITING_MANUAL' && (
                 <Button type="primary" icon={<DownloadOutlined />} loading={retry.isPending} onClick={() => retry.mutate(selected.id)}>

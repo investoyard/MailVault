@@ -1,6 +1,6 @@
-import { buildDestinationFolder, evaluateConditions, filterAttachments, type AttachmentInfo, type MailEnvelope, type MailProvider } from '@mailvault/core';
+import { buildDestinationFolder, buildFileName, evaluateConditions, filterAttachments, sanitizeFileName, type AttachmentDecision, type AttachmentInfo, type MailEnvelope, type MailProvider } from '@mailvault/core';
 import { prisma, Prisma, type DownloadStatus, type Mailbox, type Message, type ProcessTrigger } from '@mailvault/db';
-import { attachmentFilterSchema, downloadConfigSchema, ruleConditionsSchema } from '@mailvault/shared';
+import { EMAIL_PDF_ATTACHMENT_ID, attachmentFilterSchema, downloadConfigSchema, ruleConditionsSchema } from '@mailvault/shared';
 import { plog } from './alerts.js';
 import type { PipelineContext, PipelineSettings } from './context.js';
 
@@ -102,7 +102,8 @@ export async function processMessage(
 
     // Attachments are listed once per email and stored, even when several rules match.
     if (!cache.attachments) {
-      const stored = await prisma.attachment.findMany({ where: { messageId: msg.id } });
+      // The synthetic "email as PDF" row is not a real attachment: other rules never see it.
+      const stored = await prisma.attachment.findMany({ where: { messageId: msg.id, kind: { not: 'EMAIL_BODY' } } });
       if (stored.length || !msg.hasAttachments) {
         cache.attachments = stored.map(toInfo);
       } else {
@@ -174,24 +175,46 @@ async function createMatch(
   const filter = manual
     ? attachmentFilterSchema.parse({ mode: 'ALL', allowMultiple: true, includeInline: true })
     : attachmentFilterSchema.parse(rule.attachments);
-  const decisions = filterAttachments(filter, attachments, policy).map((d) =>
+  let decisions = filterAttachments(filter, attachments, policy).map((d) =>
     manual && !manual.includes(d.attachment.id) ? { ...d, include: false, reason: 'Not selected for manual download' } : d,
   );
+  if (!manual && download.emailPdf === 'ONLY') {
+    decisions = decisions.map((d) => (d.include ? { ...d, include: false, reason: 'This rule saves only the email as PDF' } : d));
+  }
+
+  // "Save the email as PDF": one extra file per email, handled by the normal download queue.
+  const wantEmailPdf = manual ? manual.includes(EMAIL_PDF_ATTACHMENT_ID) : download.emailPdf !== 'OFF';
+  if (wantEmailPdf) {
+    const name = `${sanitizeFileName((msg.subject || 'Email').slice(0, 120), 120, 'Email')}.pdf`;
+    await prisma.attachment.upsert({
+      where: { messageId_providerAttachmentId: { messageId: msg.id, providerAttachmentId: EMAIL_PDF_ATTACHMENT_ID } },
+      create: { messageId: msg.id, providerAttachmentId: EMAIL_PDF_ATTACHMENT_ID, name, contentType: 'application/pdf', sizeBytes: 0, kind: 'EMAIL_BODY' },
+      update: {},
+    });
+    decisions.push({
+      attachment: { id: EMAIL_PDF_ATTACHMENT_ID, name, contentType: 'application/pdf', size: 0, isInline: false, kind: 'file' },
+      include: true,
+      saveName: name,
+    });
+  }
 
   const stored = await prisma.attachment.findMany({ where: { messageId: msg.id }, select: { id: true, providerAttachmentId: true } });
   const idOf = new Map(stored.map((s) => [s.providerAttachmentId, s.id]));
   const simulate = !manual && (opts.simulate || rule.simulationMode);
-  const folder = simulate
-    ? buildDestinationFolder(rule.destination.basePath, download, {
-        receivedAt: msg.receivedAt,
-        timeZone: settings.timeZone,
-        senderEmail: msg.fromEmail,
-        senderName: msg.fromName ?? undefined,
-        subject: msg.subject,
-        ruleName: rule.name,
-        mailbox: mb.email,
-      })
-    : '';
+  const pctx = {
+    receivedAt: msg.receivedAt,
+    timeZone: settings.timeZone,
+    senderEmail: msg.fromEmail,
+    senderName: msg.fromName ?? undefined,
+    subject: msg.subject,
+    ruleName: rule.name,
+    mailbox: mb.email,
+  };
+  const folder = simulate ? buildDestinationFolder(rule.destination.basePath, download, pctx) : '';
+  const simName = (d: AttachmentDecision) =>
+    d.attachment.id === EMAIL_PDF_ATTACHMENT_ID
+      ? buildFileName(download.emailPdfNamePattern, d.saveName, pctx)
+      : buildFileName(download.fileNamePattern, d.saveName, pctx);
 
   let runNumber = 1;
   if (opts.reprocess) {
@@ -210,7 +233,7 @@ async function createMatch(
         skipReason = d.reason;
       } else if (simulate) {
         status = 'SKIPPED';
-        skipReason = `Simulation: would save to ${folder}\\${d.saveName}`;
+        skipReason = `Simulation: would save to ${folder}\\${simName(d)}`;
       } else if (!manual && !rule.autoDownload) {
         status = 'AWAITING_MANUAL';
       } else {

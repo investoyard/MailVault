@@ -3,3 +3,4 @@ export * from './filename.js';
 export * from './path-pattern.js';
 export * from './provider.js';
 export * from './rule-engine.js';
+export * from './email-html.js';

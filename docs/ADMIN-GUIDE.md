@@ -51,8 +51,19 @@ Download Rules → *New rule*:
    | `{BaseName}_{Today:yyyyMMdd}` | `Statement_20261119.zip` |
 
    `{Date:…}` is the email's received date, `{Today:…}` the day the file is saved. Formats use `yyyy yy MMMM MMM MM M dd d HH mm ss` with `- _ . space ,` between them; the extension is always added once at the end (`{OriginalName}_{Date:ddMMyyyy}` → `Statement_07042026.zip`; a trailing `{Ext}` is not repeated). Unknown placeholders are flagged before you can save.
-5. Watch the **Example save location** on the right, then **Test on the last 14 days of email**.
-6. New rules can start in **Simulation**: History shows "would save to …" without writing files.
+5. **Password-protected files** (optional): switch on *Remove passwords before saving* and enter up to 5 passwords (tried in order).
+   - PDFs are saved without their password; PDFs that only block printing/copying are freed too. ZIPs are saved as the same ZIP
+     without a password, and PDFs inside are unlocked with the same passwords.
+   - Saved passwords are stored encrypted and never shown again (the rule shows "2 passwords saved"; *Replace* / *Remove*).
+   - If no password works, the file is saved **with** its password, History shows *Still password-protected* and one alert is sent
+     per rule. Fix the password, then **Retry unlocking** in Download History replaces that copy.
+   - Unlocked files can be opened by anyone with access to the destination folder: check its Windows permissions.
+6. **Save the email as PDF** (optional): *Also save the email as PDF* (next to the attachments) or *Only the email PDF*.
+   The PDF shows From, To, CC, date, subject, attachment names and the message, with pictures embedded in the email.
+   Pictures from the internet are blocked unless *Load pictures from the internet* is on. Name pattern default `{yyyyMMdd}_{Subject}`.
+   Works for emails without attachments too, including historical jobs.
+7. Watch the **Example save location** on the right, then **Test on the last 14 days of email**.
+8. New rules can start in **Simulation**: History shows "would save to …" without writing files.
 
 Rules apply to emails received **after** they are created; each edit saves a new version. To process older emails, use a historical job. Rules are switched off, never deleted.
 

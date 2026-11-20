@@ -111,5 +111,16 @@ npx tsx scripts/md-to-pdf.ts <file.md> [out.pdf]  # styled PDF of a doc via Edge
   (run by the tenant admin; never sign in for the user).
 - Sync History (Monitoring): GET /api/sync-runs (apps/api/src/routes/sync-runs.ts, permission module `syncHistory`) over `SyncRun`
   (`newMessages` stored by worker pipeline/sync.ts); no finish time after 15 min = STOPPED.
+- Password removal (rule `download.unlockProtected`): core/src/node/unlock.ts. PDFs via qpdf (`QPDF_PATH`, installed at
+  D:\Investoyard\.tools\qpdf; password through stdin, `--deterministic-id` so Smart duplicates still match); ZIPs via zip.js,
+  re-packed without password (inner PDFs unlocked too). Passwords: `Rule.filePasswords` (encryptSecret JSON array) + `filePasswordCount`;
+  sent as `filePasswords` next to the rule body (undefined = keep), never in rule JSON/versions/audit, API omits the column.
+  Result in `AttachmentDownload.protection` / `ExtractedFile.protection`; STILL_LOCKED keeps the original, raises alert `UNLOCK:<ruleId>`,
+  and Retry (allowed for SUCCESS+STILL_LOCKED) replaces that exact file.
+- Email as PDF (rule `download.emailPdf` OFF/ALSO/ONLY): evaluate.ts adds a synthetic Attachment (kind EMAIL_BODY, providerAttachmentId
+  `EMAIL_PDF_ATTACHMENT_ID`) so the normal download queue/history/retry/webhooks handle it; other rules never see that row.
+  download.ts fetches `getEmailContent` (GET only, body not stored), core/src/email-html.ts sanitizes + builds HTML (CSP), worker
+  pipeline/email-pdf.ts renders with installed Edge via playwright-core (JS off, network blocked, shared browser, max 2 parallel).
+  Historical jobs include emails without attachments when a selected rule saves email PDFs.
 - Deploy on this server: `npm run build:api && npm run build:web`, touch `iisnode/restart.txt` (never commit it), restart the worker
   via POST /api/system/worker/restart. Schema changes: write the migration SQL, then `npm run db:deploy`.

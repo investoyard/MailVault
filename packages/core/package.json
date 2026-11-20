@@ -16,6 +16,7 @@
   "dependencies": {
     "@kenjiuno/msgreader": "^1.29.0",
     "@mailvault/shared": "0.1.0",
+    "@zip.js/zip.js": "^2.25.0",
     "mailparser": "^3.14.3",
     "yauzl": "^3.4.0"
   },

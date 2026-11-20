@@ -29,6 +29,15 @@ export type DownloadStatus = (typeof DOWNLOAD_STATUSES)[number];
 export const DUPLICATE_POLICIES = ['SKIP', 'REPLACE', 'RENAME', 'SMART'] as const;
 export type DuplicatePolicy = (typeof DUPLICATE_POLICIES)[number];
 
+export const EMAIL_PDF_MODES = ['OFF', 'ALSO', 'ONLY'] as const;
+export type EmailPdfMode = (typeof EMAIL_PDF_MODES)[number];
+
+/** Attachment id of the synthetic "email saved as PDF" file (Attachment.kind = EMAIL_BODY). */
+export const EMAIL_PDF_ATTACHMENT_ID = 'mailvault:email-pdf';
+
+export const FILE_PROTECTIONS = ['NONE', 'UNLOCKED', 'RESTRICTIONS_REMOVED', 'STILL_LOCKED'] as const;
+export type FileProtection = (typeof FILE_PROTECTIONS)[number];
+
 export const DESTINATION_STATUSES = ['UNKNOWN', 'HEALTHY', 'LOW_SPACE', 'UNAVAILABLE'] as const;
 export type DestinationStatus = (typeof DESTINATION_STATUSES)[number];
 

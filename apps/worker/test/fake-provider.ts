@@ -86,6 +86,21 @@ export class FakeProvider implements MailProvider {
     return this.find(ref.messageId).body ?? '';
   }
 
+  async getEmailContent(ref: MailRef) {
+    const m = this.find(ref.messageId);
+    const body = m.body ?? '';
+    return {
+      subject: m.subject,
+      from: m.from,
+      to: m.to,
+      cc: m.cc,
+      receivedAt: m.receivedAt,
+      body: { type: /<\w+[^>]*>/.test(body) ? ('html' as const) : ('text' as const), content: body },
+      attachmentNames: m.attachments.filter((a) => !a.isInline).map((a) => a.name),
+      inlineImages: [],
+    };
+  }
+
   async listAttachments(ref: MailRef) {
     this.calls.listAttachments++;
     return this.find(ref.messageId).attachments.map(({ content: _c, ...a }) => a);

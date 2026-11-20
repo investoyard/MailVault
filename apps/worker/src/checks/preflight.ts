@@ -6,7 +6,8 @@ import { execSync } from 'node:child_process';
 import { X509Certificate } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { checkFolder } from '@mailvault/core/node';
+import { checkFolder, qpdfPath, qpdfVersion } from '@mailvault/core/node';
+import { downloadConfigSchema } from '@mailvault/shared';
 import { prisma, smtpSettings } from '@mailvault/db';
 import { M365Provider, graphConfigFromEnv } from '@mailvault/m365';
 
@@ -52,6 +53,20 @@ async function main() {
   if (supers === 1) add('warn', 'Users', 'Only one Super Admin: add a second one so you are not locked out if that person is away');
   const noEmail = await prisma.user.count({ where: { isActive: true, role: { in: ['SUPER_ADMIN', 'ADMIN'] }, email: null } });
   if (noEmail) add('warn', 'Users', `${noEmail} admin(s) without an email address will not receive alert emails`);
+
+  // Password removal (qpdf) and email PDFs (Edge): blocking only when an enabled rule uses them.
+  const rules = await prisma.rule.findMany({ where: { enabled: true }, select: { name: true, download: true } });
+  const unlockRules = rules.filter((r) => downloadConfigSchema.parse(r.download).unlockProtected).map((r) => r.name);
+  const pdfRules = rules.filter((r) => downloadConfigSchema.parse(r.download).emailPdf !== 'OFF').map((r) => r.name);
+  try {
+    add('ok', 'Tools', `${await qpdfVersion()} (removes PDF passwords)`);
+  } catch {
+    const usedBy = unlockRules.length ? ` (used by: ${unlockRules.join(', ')})` : '';
+    add(unlockRules.length ? 'fail' : 'warn', 'Tools', `qpdf not found at ${qpdfPath()}: PDF passwords cannot be removed${usedBy}. Set QPDF_PATH in .env`);
+  }
+  const edge = ['C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe', 'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe'].find((p) => existsSync(p));
+  if (edge) add('ok', 'Tools', 'Microsoft Edge installed (saves emails as PDF)');
+  else add(pdfRules.length ? 'fail' : 'warn', 'Tools', `Microsoft Edge not found: emails cannot be saved as PDF${pdfRules.length ? ` (used by: ${pdfRules.join(', ')})` : ''}`);
 
   // Demo data
   const demo = await prisma.mailbox.count({ where: { email: { endsWith: '@demo.mailvault.local' } } });

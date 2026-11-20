@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { prisma } from '@mailvault/db';
-import { ruleInputSchema, type RuleInput } from '@mailvault/shared';
+import { encryptSecret, prisma } from '@mailvault/db';
+import { rulePasswordsSchema, ruleInputSchema, type RuleInput } from '@mailvault/shared';
 import { assertMailbox, requirePermission } from '../auth.js';
 import { audit } from './resources.js';
 
@@ -25,28 +25,47 @@ function toData(input: RuleInput) {
   };
 }
 
+/**
+ * File passwords sent with a rule: undefined = keep, [] = remove, list = replace.
+ * Stored encrypted on the rule only (not in the rule JSON, versions or audit log).
+ */
+function passwordData(body: unknown) {
+  const { filePasswords } = rulePasswordsSchema.parse(body);
+  if (filePasswords === undefined) return { data: {}, audit: 'unchanged' };
+  const list = [...new Set(filePasswords)];
+  return {
+    data: { filePasswords: list.length ? encryptSecret(JSON.stringify(list)) : null, filePasswordCount: list.length },
+    audit: list.length ? `${list.length} set` : 'removed',
+  };
+}
+
+/** Never send the encrypted passwords to the browser. */
+const OMIT = { filePasswords: true } as const;
+
 export async function ruleRoutes(app: FastifyInstance) {
   app.get('/rules/:id', { preHandler: requirePermission('rules') }, async (req) => {
     const { id } = idParam.parse(req.params);
     assertMailbox(req, (await prisma.rule.findUniqueOrThrow({ where: { id } })).mailboxId);
     return prisma.rule.findUniqueOrThrow({
       where: { id },
+      omit: OMIT,
       include: { mailbox: { select: { email: true } }, versions: { orderBy: { version: 'desc' }, take: 20, select: { version: true, createdAt: true, changedById: true } } },
     });
   });
 
   app.post('/rules', { preHandler: requirePermission('rules', 'create') }, async (req, reply) => {
     const input = ruleInputSchema.parse(req.body);
+    const pw = passwordData(req.body);
     assertMailbox(req, input.mailboxId);
     const clash = await prisma.rule.findFirst({ where: { mailboxId: input.mailboxId, name: input.name } });
     if (clash) return reply.code(409).send({ error: 'A rule with this name already exists for this mailbox' });
 
     const rule = await prisma.$transaction(async (tx) => {
-      const r = await tx.rule.create({ data: { ...toData(input), createdById: req.user.id, currentVersion: 1 } });
+      const r = await tx.rule.create({ data: { ...toData(input), ...pw.data, createdById: req.user.id, currentVersion: 1 }, omit: OMIT });
       await tx.ruleVersion.create({ data: { ruleId: r.id, version: 1, snapshot: input as never, changedById: req.user.id } });
       return r;
     });
-    await audit(req.user.id, 'RULE_CREATED', 'Rule', rule.id, null, input, req.ip);
+    await audit(req.user.id, 'RULE_CREATED', 'Rule', rule.id, null, { ...input, filePasswords: pw.audit }, req.ip);
     return rule;
   });
 
@@ -54,7 +73,8 @@ export async function ruleRoutes(app: FastifyInstance) {
   app.put('/rules/:id', { preHandler: requirePermission('rules', 'edit') }, async (req, reply) => {
     const { id } = idParam.parse(req.params);
     const input = ruleInputSchema.parse(req.body);
-    const before = await prisma.rule.findUniqueOrThrow({ where: { id } });
+    const pw = passwordData(req.body);
+    const before = await prisma.rule.findUniqueOrThrow({ where: { id }, omit: OMIT });
     assertMailbox(req, before.mailboxId);
     assertMailbox(req, input.mailboxId);
     const clash = await prisma.rule.findFirst({ where: { mailboxId: input.mailboxId, name: input.name, id: { not: id } } });
@@ -62,12 +82,12 @@ export async function ruleRoutes(app: FastifyInstance) {
 
     const version = before.currentVersion + 1;
     const rule = await prisma.$transaction(async (tx) => {
-      const r = await tx.rule.update({ where: { id }, data: { ...toData(input), currentVersion: version } });
+      const r = await tx.rule.update({ where: { id }, data: { ...toData(input), ...pw.data, currentVersion: version }, omit: OMIT });
       await tx.ruleVersion.create({ data: { ruleId: id, version, snapshot: input as never, changedById: req.user.id } });
       return r;
     });
     const { createdAt: _c, updatedAt: _u, ...beforeFields } = before;
-    await audit(req.user.id, 'RULE_UPDATED', 'Rule', id, beforeFields, { ...input, version }, req.ip);
+    await audit(req.user.id, 'RULE_UPDATED', 'Rule', id, beforeFields, { ...input, version, filePasswords: pw.audit }, req.ip);
     return rule;
   });
 }

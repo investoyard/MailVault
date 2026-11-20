@@ -161,6 +161,9 @@ model Rule {
   download         Json            // DownloadConfig
   duplicatePolicy  DuplicatePolicy @default(SMART)
   autoDownload     Boolean         @default(true)
+  // Passwords for protected PDF/ZIP attachments: encrypted JSON array (packages/db/src/secrets.ts). Never returned by the API.
+  filePasswords    String?
+  filePasswordCount Int            @default(0)
   currentVersion   Int             @default(1)
   effectiveFrom    DateTime        @default(now())
   createdById      String?
@@ -248,6 +251,7 @@ enum AttachmentKind {
   ITEM
   REFERENCE
   UNKNOWN
+  EMAIL_BODY // synthetic: the email itself saved as PDF
 }
 
 model Attachment {
@@ -265,6 +269,14 @@ model Attachment {
   downloads AttachmentDownload[]
 
   @@unique([messageId, providerAttachmentId])
+}
+
+// Result of removing a file password (null = the rule does not unlock files).
+enum FileProtection {
+  NONE                 // file was not protected
+  UNLOCKED             // password removed
+  RESTRICTIONS_REMOVED // PDF had only print/copy restrictions; removed
+  STILL_LOCKED         // no saved password worked; original kept
 }
 
 enum DownloadStatus {
@@ -291,6 +303,7 @@ model AttachmentDownload {
   errorCode       String?
   errorMessage    String?
   sha256          String?
+  protection      FileProtection?
   bytesWritten    BigInt?
   downloadedAt    DateTime?
   createdAt       DateTime       @default(now())
@@ -314,6 +327,7 @@ model ExtractedFile {
   reason          String?
   destinationPath String?
   sha256          String?
+  protection      FileProtection?
   bytes           BigInt?
   createdAt       DateTime       @default(now())
   download        AttachmentDownload @relation(fields: [downloadId], references: [id], onDelete: Cascade)

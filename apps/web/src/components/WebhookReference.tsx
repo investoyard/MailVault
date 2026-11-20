@@ -26,6 +26,8 @@ const SAMPLES: Record<string, object> = {
         path: 'D:\\MailVault-Files\\2026-27\\November, 2026\\Client Daily Statement - 0000 - 20261117.zip',
         sizeBytes: 183422,
         sha256: '9f2c4e1b7a0d3c5e8f6a2b4d1c3e5f7a9b0c2d4e6f8a1b3c5d7e9f0a2b4c6d8e',
+        source: 'attachment',
+        protection: 'UNLOCKED',
       },
       email,
       rule,
@@ -101,6 +103,17 @@ const FILE_FIELDS: Field[] = [
   { field: 'data.file.path', type: 'string', meaning: <>Full path of the saved file on the server or share. <i>file.saved only</i></> },
   { field: 'data.file.sizeBytes', type: 'number', meaning: <>Size in bytes. <i>file.saved only</i></> },
   { field: 'data.file.sha256', type: 'string', meaning: <>SHA-256 hash (64 hex characters), to check the file is complete. <i>file.saved only</i></> },
+  { field: 'data.file.source', type: 'string', meaning: <><span className="mv-mono">attachment</span>, or <span className="mv-mono">email-pdf</span> when the email itself was saved as PDF. <i>file.saved only</i></> },
+  {
+    field: 'data.file.protection',
+    type: 'string',
+    meaning: (
+      <>
+        Only when the rule removes passwords: <span className="mv-mono">UNLOCKED</span> (password removed), <span className="mv-mono">RESTRICTIONS_REMOVED</span>, <span className="mv-mono">NONE</span> (was not protected) or{' '}
+        <span className="mv-mono">STILL_LOCKED</span> (saved with its password)
+      </>
+    ),
+  },
   { field: 'data.file.extractedFrom', type: 'object', meaning: <>Only for files unpacked from a ZIP or attached email: <span className="mv-mono">name</span> of the container and <span className="mv-mono">innerPath</span> inside it</> },
   { field: 'data.email.mailbox', type: 'string', meaning: 'Monitored mailbox the email arrived in' },
   { field: 'data.email.from', type: 'string', meaning: 'Sender address' },

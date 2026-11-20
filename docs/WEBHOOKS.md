@@ -34,6 +34,8 @@ then marks the delivery failed and alerts its administrators. Process the event 
       "path": "\\\\fs01\\Finance\\Invoices\\vendor.com\\2026\\11\\INV-1042.pdf",
       "sizeBytes": 183422,
       "sha256": "9f2c…64 hex chars…",
+      "source": "attachment",
+      "protection": "UNLOCKED",
       "extractedFrom": { "name": "invoices.zip", "innerPath": "Nov/INV-1042.pdf" }
     },
     "email": {
@@ -49,6 +51,9 @@ then marks the delivery failed and alerts its administrators. Process the event 
 }
 ```
 `extractedFrom` is present only for files unpacked from a ZIP or an attached email.
+`source` is `attachment`, or `email-pdf` when the rule saved the email itself as PDF.
+`protection` is present only when the rule removes passwords: `UNLOCKED`, `RESTRICTIONS_REMOVED`, `NONE` (was not protected)
+or `STILL_LOCKED` (no saved password worked; the file was saved with its password).
 
 **`file.failed`**: a download failed permanently. Same `data` as above (without `path`/`sha256`) plus
 `"error": { "code": "SOURCE_GONE", "message": "The email or attachment no longer exists in the mailbox" }`.

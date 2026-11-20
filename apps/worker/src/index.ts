@@ -12,6 +12,7 @@ import { runFolderHealth } from './jobs/folder-health.js';
 import { defaultContext as ctx, graphConfigured } from './pipeline/context.js';
 import { dueMailboxes, syncMailbox } from './pipeline/sync.js';
 import { processDownloads, recoverStuckDownloads } from './pipeline/download.js';
+import { closeEmailPdfBrowser } from './pipeline/email-pdf.js';
 import { runHistoricalJob, runManualDownload } from './pipeline/historical.js';
 import { notifyChange } from './pipeline/alerts.js';
 import { browseRoots, dispatchPending, dispatchWebhooks, sendDailyDigest } from '@mailvault/db';
@@ -149,6 +150,7 @@ async function main() {
     clearInterval(beat);
     // Graceful: lets running syncs/downloads finish (up to 20 s) before stopping.
     await boss.stop({ graceful: true, timeout: 20_000 }).catch(() => undefined);
+    await closeEmailPdfBrowser();
     await prisma.serviceHeartbeat.delete({ where: { instanceId } }).catch(() => undefined);
     await prisma.$disconnect();
     process.exit(exitCode);

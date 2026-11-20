@@ -189,7 +189,7 @@ describe('pipeline: sync → match → download', () => {
 
     // Make them due; the email for INV-2 disappears from the mailbox (permanent error).
     fake.messages = fake.messages.filter((m) => !m.subject.includes('INV-2'));
-    await prisma.attachmentDownload.updateMany({ data: { nextAttemptAt: new Date(Date.now() - 1000) } });
+    await prisma.attachmentDownload.updateMany({ data: { nextAttemptAt: new Date(clock.getTime() - 1000) } });
     await processDownloads(ctx);
     rows = await prisma.attachmentDownload.findMany({ where: { status: { not: 'SKIPPED' } }, orderBy: { attachment: { name: 'asc' } } });
     expect(rows.map((r) => [r.status, r.attempts])).toEqual([

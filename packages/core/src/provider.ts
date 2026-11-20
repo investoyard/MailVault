@@ -90,6 +90,20 @@ export interface SearchPage {
   nextCursor: string | null;
 }
 
+/** Everything needed to save an email as a PDF. Fetched at save time, never stored. */
+export interface EmailContent {
+  subject: string;
+  from: MailAddress;
+  to: MailAddress[];
+  cc: MailAddress[];
+  receivedAt: Date;
+  body: { type: 'html' | 'text'; content: string };
+  /** Names of the real (not inline) attachments, listed in the PDF header. */
+  attachmentNames: string[];
+  /** Pictures embedded in the email (referenced as cid: in the HTML). */
+  inlineImages: { contentId: string; name: string; contentType: string; base64: string }[];
+}
+
 export interface MailProvider {
   readonly type: ProviderType;
   testConnection(mailbox: string): Promise<ConnectionTestResult>;
@@ -99,6 +113,7 @@ export interface MailProvider {
   search(q: SearchQuery): Promise<SearchPage>;
   getMessage(ref: MailRef): Promise<MailEnvelope>;
   getBodyText(ref: MailRef): Promise<string>;
+  getEmailContent(ref: MailRef): Promise<EmailContent>;
   listAttachments(ref: MailRef): Promise<AttachmentInfo[]>;
   openAttachment(ref: MailRef, attachmentId: string): Promise<NodeJS.ReadableStream>;
 }

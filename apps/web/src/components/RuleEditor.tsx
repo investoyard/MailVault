@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Alert, App, Button, Card, Col, DatePicker, Divider, Drawer, Form, Input, InputNumber, Modal, Radio, Row, Select, Skeleton, Space, Switch, Tag, Tooltip, Typography } from 'antd';
-import { BulbOutlined, ExperimentOutlined, FolderOpenOutlined, InfoCircleOutlined } from '@ant-design/icons';
+import { BulbOutlined, DeleteOutlined, ExperimentOutlined, FolderOpenOutlined, InfoCircleOutlined, KeyOutlined, LockOutlined, PlusOutlined } from '@ant-design/icons';
 import dayjs, { type Dayjs } from 'dayjs';
 import {
   buildDestinationFolder,
@@ -33,6 +33,8 @@ interface Destination {
 export interface RuleRecord extends RuleInput {
   id: string;
   currentVersion: number;
+  /** How many file passwords are saved (the passwords themselves never reach the browser). */
+  filePasswordCount?: number;
 }
 
 type FormValues = Omit<RuleInput, 'conditions'> & {
@@ -69,6 +71,10 @@ const DEFAULTS: FormValues = {
     duplicatePolicy: 'SMART',
     autoDownload: true,
     setFileDateToReceived: true,
+    unlockProtected: false,
+    emailPdf: 'OFF',
+    emailPdfNamePattern: '{yyyyMMdd}_{Subject}',
+    emailPdfRemoteImages: false,
   },
 };
 
@@ -96,9 +102,13 @@ export function RuleEditor({ open, rule, onClose }: { open: boolean; rule: RuleR
   const mailboxes = useQuery({ queryKey: ['mailboxes'], queryFn: () => api.get<Mailbox[]>('/api/mailboxes') });
   const destinations = useQuery({ queryKey: ['destinations'], queryFn: () => api.get<Destination[]>('/api/destinations') });
 
+  // File passwords: null = keep what is saved, list = replace (empty list = remove).
+  const [passwords, setPasswords] = useState<string[] | null>(null);
+
   useEffect(() => {
     if (!open) return;
     form.resetFields();
+    setPasswords(null);
     if (rule) {
       const c = rule.conditions;
       form.setFieldsValue({
@@ -149,7 +159,7 @@ export function RuleEditor({ open, rule, onClose }: { open: boolean; rule: RuleR
 
   const save = useMutation({
     mutationFn: (v: FormValues) => {
-      const body = toInput(v);
+      const body = { ...toInput(v), ...(passwords !== null ? { filePasswords: passwords.map((p) => p.trim()).filter(Boolean) } : {}) };
       return rule ? api.put(`/api/rules/${rule.id}`, body) : api.post('/api/rules', body);
     },
     onSuccess: () => {
@@ -180,7 +190,8 @@ export function RuleEditor({ open, rule, onClose }: { open: boolean; rule: RuleR
     const original = `INV-1042.${ext}`;
     const folder = buildDestinationFolder(dest?.basePath ?? 'D:\\Destination', values.download, ctx);
     const file = buildFileName(values.download.fileNamePattern, original, ctx);
-    return { folder, file, sample, dest };
+    const emailPdf = values.download.emailPdf && values.download.emailPdf !== 'OFF' ? buildFileName(values.download.emailPdfNamePattern, `${ctx.subject}.pdf`, ctx) : null;
+    return { folder, file, emailPdf, onlyEmailPdf: values.download.emailPdf === 'ONLY', sample, dest };
   }, [values, destinations.data, mailboxes.data]);
 
   const summary = useMemo(() => {
@@ -199,11 +210,15 @@ export function RuleEditor({ open, rule, onClose }: { open: boolean; rule: RuleR
     if (!lines.length) lines.push('Every email with attachments');
     const a = values.attachments;
     lines.push(a?.mode === 'SELECTED' && a.extensions?.length ? `Save ${a.extensions.map((e) => e.toUpperCase()).join(', ')} files` : 'Save all attachment types');
+    const d = values.download;
+    if (d?.unlockProtected) lines.push('Remove passwords from PDF and ZIP files');
+    if (d?.emailPdf === 'ALSO') lines.push('Also save the email itself as PDF');
+    if (d?.emailPdf === 'ONLY') lines.push('Save only the email itself as PDF (no attachments)');
     if (a?.extractArchives || a?.extractEmails) lines.push(`Also look inside ${[a.extractArchives && 'ZIP files', a.extractEmails && 'attached emails'].filter(Boolean).join(' and ')}`);
     return lines;
   }, [values]);
 
-  const insertToken = (field: 'subfolderPattern' | 'fileNamePattern', token: string) => {
+  const insertToken = (field: 'subfolderPattern' | 'fileNamePattern' | 'emailPdfNamePattern', token: string) => {
     const cur = form.getFieldValue(['download', field]) ?? '';
     form.setFieldValue(['download', field], field === 'subfolderPattern' && cur && !cur.endsWith('\\') ? `${cur}\\${token}` : `${cur}${token}`);
   };
@@ -471,6 +486,73 @@ export function RuleEditor({ open, rule, onClose }: { open: boolean; rule: RuleR
                 </Col>
               </Row>
             </Section>
+
+            <Section title="Password-protected files" hint="MailVault can remove the password from PDF and ZIP attachments before saving them. The email in the mailbox is never changed.">
+              <Form.Item name={['download', 'unlockProtected']} label="Remove passwords before saving" valuePropName="checked" style={{ marginBottom: 12 }}>
+                <Switch />
+              </Form.Item>
+              <Form.Item noStyle shouldUpdate={(a, b) => a.download?.unlockProtected !== b.download?.unlockProtected}>
+                {({ getFieldValue }) =>
+                  getFieldValue(['download', 'unlockProtected']) && (
+                    <>
+                      <PasswordList saved={rule?.filePasswordCount ?? 0} value={passwords} onChange={setPasswords} />
+                      <Alert
+                        type="info"
+                        showIcon
+                        style={{ marginTop: 12 }}
+                        message="How it works"
+                        description={
+                          <ul style={{ margin: 0, paddingLeft: 18 }}>
+                            <li>PDFs are saved without their password; PDFs that only block printing or copying are freed too.</li>
+                            <li>ZIPs are saved as the same ZIP without a password. PDFs inside are unlocked with the same passwords.</li>
+                            <li>The passwords are tried in order. If none works, the file is saved with its password, History shows it, and an alert is sent. Fix the password, then use <b>Retry</b> in Download History.</li>
+                          </ul>
+                        }
+                      />
+                      <Alert type="warning" showIcon style={{ marginTop: 10 }} message="Unlocked files can be opened by anyone who can open the destination folder. Check the folder's Windows permissions." />
+                    </>
+                  )
+                }
+              </Form.Item>
+            </Section>
+
+            <Section title="Save the email as PDF" hint="Saves the email itself (sender, recipients, date, subject and the message) as a PDF next to the attachments.">
+              <Form.Item name={['download', 'emailPdf']} label="Email PDF" style={{ marginBottom: 12 }}>
+                <Radio.Group
+                  options={[
+                    { label: 'Off', value: 'OFF' },
+                    { label: 'Also save the email as PDF', value: 'ALSO' },
+                    { label: 'Only the email PDF (no attachments)', value: 'ONLY' },
+                  ]}
+                />
+              </Form.Item>
+              <Form.Item noStyle shouldUpdate={(a, b) => a.download?.emailPdf !== b.download?.emailPdf}>
+                {({ getFieldValue }) =>
+                  getFieldValue(['download', 'emailPdf']) !== 'OFF' && (
+                    <>
+                      <Form.Item
+                        name={['download', 'emailPdfNamePattern']}
+                        label="PDF file name"
+                        rules={[patternRule]}
+                        tooltip=".pdf is added automatically. {OriginalName} / {BaseName} stand for the email subject here."
+                        extra={<TokenBar onPick={(t) => insertToken('emailPdfNamePattern', t)} />}
+                      >
+                        <Input className="mv-mono" placeholder="{yyyyMMdd}_{Subject}" />
+                      </Form.Item>
+                      <Form.Item
+                        name={['download', 'emailPdfRemoteImages']}
+                        label="Load pictures from the internet"
+                        valuePropName="checked"
+                        tooltip="Off (recommended): only pictures embedded in the email are shown. Loading internet pictures tells the sender the email was opened, and makes the server fetch addresses chosen by the sender."
+                        style={{ marginBottom: 0 }}
+                      >
+                        <Switch />
+                      </Form.Item>
+                    </>
+                  )
+                }
+              </Form.Item>
+            </Section>
           </Form>
         </Col>
 
@@ -498,8 +580,18 @@ export function RuleEditor({ open, rule, onClose }: { open: boolean; rule: RuleR
                     For an email from <b>{preview.sample}</b> received today:
                   </div>
                   <div className="mv-mono" style={{ background: '#F8FAFC', border: '1px solid #E6E9F0', borderRadius: 8, padding: 12, wordBreak: 'break-all', lineHeight: 1.6 }}>
-                    <span className="mv-muted">{preview.folder}\</span>
-                    <b>{preview.file}</b>
+                    {!preview.onlyEmailPdf && (
+                      <div>
+                        <span className="mv-muted">{preview.folder}\</span>
+                        <b>{preview.file}</b>
+                      </div>
+                    )}
+                    {preview.emailPdf && (
+                      <div style={{ marginTop: preview.onlyEmailPdf ? 0 : 6 }}>
+                        <span className="mv-muted">{preview.folder}\</span>
+                        <b>{preview.emailPdf}</b> <Tag color="purple">email PDF</Tag>
+                      </div>
+                    )}
                   </div>
                   {preview.dest?.status === 'UNAVAILABLE' && <Alert style={{ marginTop: 10 }} type="error" showIcon message="This destination folder is currently unavailable." />}
                 </>
@@ -542,6 +634,68 @@ export function RuleEditor({ open, rule, onClose }: { open: boolean; rule: RuleR
         )}
       </Modal>
     </Drawer>
+  );
+}
+
+/**
+ * Saved passwords are never shown: the rule only says how many are set. Typing new ones replaces them all.
+ * value: null = keep the saved passwords, [] = remove them, list = replace them.
+ */
+function PasswordList({ saved, value, onChange }: { saved: number; value: string[] | null; onChange: (v: string[] | null) => void }) {
+  if (value === null) {
+    return (
+      <Space wrap>
+        {saved > 0 ? (
+          <Tag icon={<LockOutlined />} color="green" style={{ padding: '3px 10px', fontSize: 13 }}>
+            {saved} password{saved === 1 ? '' : 's'} saved
+          </Tag>
+        ) : (
+          <Tag icon={<LockOutlined />} style={{ padding: '3px 10px', fontSize: 13 }}>No password saved yet</Tag>
+        )}
+        <Button size="small" icon={<KeyOutlined />} onClick={() => onChange([''])}>
+          {saved ? 'Replace passwords' : 'Add passwords'}
+        </Button>
+        {saved > 0 && (
+          <Button size="small" danger onClick={() => onChange([])}>
+            Remove passwords
+          </Button>
+        )}
+      </Space>
+    );
+  }
+  if (value.length === 0) {
+    return (
+      <Space>
+        <Typography.Text type="danger">The saved passwords will be removed when you save the rule.</Typography.Text>
+        <Button size="small" onClick={() => onChange(null)}>
+          Undo
+        </Button>
+      </Space>
+    );
+  }
+  const set = (i: number, v: string) => onChange(value.map((p, j) => (j === i ? v : p)));
+  return (
+    <div style={{ display: 'grid', gap: 8, maxWidth: 460 }}>
+      <Typography.Text type="secondary" style={{ fontSize: 12.5 }}>
+        Tried in this order. Keep the old password here for a while when a sender changes it.{saved ? ' Saving replaces the passwords saved before.' : ''}
+      </Typography.Text>
+      {value.map((p, i) => (
+        <Space.Compact key={i} style={{ width: '100%' }}>
+          <Input.Password value={p} onChange={(e) => set(i, e.target.value)} placeholder={`Password ${i + 1}`} autoComplete="new-password" maxLength={200} />
+          <Button icon={<DeleteOutlined />} aria-label="Remove this password" onClick={() => onChange(value.length === 1 ? (saved ? null : []) : value.filter((_, j) => j !== i))} />
+        </Space.Compact>
+      ))}
+      <Space>
+        {value.length < 5 && (
+          <Button size="small" icon={<PlusOutlined />} onClick={() => onChange([...value, ''])}>
+            Add another
+          </Button>
+        )}
+        <Button size="small" type="link" onClick={() => onChange(null)}>
+          {saved ? 'Keep the saved passwords' : 'Cancel'}
+        </Button>
+      </Space>
+    </div>
   );
 }
 

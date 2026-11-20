@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import { Empty, Tag, Tooltip } from 'antd';
 import {
   CheckCircleFilled,
@@ -6,14 +6,17 @@ import {
   CloseCircleFilled,
   ExclamationCircleFilled,
   MinusCircleFilled,
+  LockFilled,
   PauseCircleFilled,
   SyncOutlined,
+  UnlockFilled,
 } from '@ant-design/icons';
 import {
   DOWNLOAD_STATUS_LABELS,
   MAILBOX_STATUS_LABELS,
   type DestinationStatus,
   type DownloadStatus,
+  type FileProtection,
   type MailboxStatus,
 } from '@mailvault/shared';
 import { palette } from '../theme';
@@ -84,6 +87,25 @@ export function DownloadStatusTag({ status }: { status: DownloadStatus }) {
     <Tag style={m.style} icon={m.icon}>
       {DOWNLOAD_STATUS_LABELS[status]}
     </Tag>
+  );
+}
+
+/** Result of removing a file password; nothing for unprotected files unless showNone. */
+export function ProtectionTag({ value, showNone, style }: { value: FileProtection | null | undefined; showNone?: boolean; style?: CSSProperties }) {
+  if (!value || (value === 'NONE' && !showNone)) return null;
+  const map: Record<FileProtection, { label: string; tip: string; style: object; icon: ReactNode }> = {
+    NONE: { label: 'Not protected', tip: 'The file had no password.', style: soft('#475569', palette.neutralSoft), icon: <UnlockFilled /> },
+    UNLOCKED: { label: 'Password removed', tip: 'Saved without its password.', style: soft(palette.success, palette.successSoft), icon: <UnlockFilled /> },
+    RESTRICTIONS_REMOVED: { label: 'Restrictions removed', tip: 'The PDF only blocked printing or copying; saved without those restrictions.', style: soft(palette.success, palette.successSoft), icon: <UnlockFilled /> },
+    STILL_LOCKED: { label: 'Still password-protected', tip: 'None of the rule’s passwords worked, so the file was saved with its password. Fix the password on the rule, then use Retry.', style: soft(palette.warning, palette.warningSoft), icon: <LockFilled /> },
+  };
+  const m = map[value];
+  return (
+    <Tooltip title={m.tip}>
+      <Tag style={{ ...m.style, ...style }} icon={m.icon}>
+        {m.label}
+      </Tag>
+    </Tooltip>
   );
 }
 

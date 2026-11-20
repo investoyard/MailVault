@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { DUPLICATE_POLICIES, MAILBOX_AUTH_MODES } from './enums.js';
+import { DUPLICATE_POLICIES, EMAIL_PDF_MODES, MAILBOX_AUTH_MODES } from './enums.js';
 
 /** Email address or a domain wildcard such as *@vendor.com */
 const addressPattern = z
@@ -51,6 +51,13 @@ export const downloadConfigSchema = z.object({
   duplicatePolicy: z.enum(DUPLICATE_POLICIES).default('SMART'),
   autoDownload: z.boolean().default(true),
   setFileDateToReceived: z.boolean().default(true),
+  /** Remove passwords from PDF and ZIP files before saving (passwords live encrypted on the rule, not here). */
+  unlockProtected: z.boolean().default(false),
+  /** Save the email itself as a PDF: not at all, next to the attachments, or instead of them. */
+  emailPdf: z.enum(EMAIL_PDF_MODES).default('OFF'),
+  emailPdfNamePattern: z.string().trim().default('{yyyyMMdd}_{Subject}'),
+  /** Load pictures from the internet into the email PDF (off: only pictures embedded in the email). */
+  emailPdfRemoteImages: z.boolean().default(false),
 });
 export type DownloadConfig = z.infer<typeof downloadConfigSchema>;
 
@@ -67,6 +74,14 @@ export const ruleInputSchema = z.object({
   download: downloadConfigSchema,
 });
 export type RuleInput = z.infer<typeof ruleInputSchema>;
+
+/**
+ * Sent next to the rule body, never stored in the rule JSON or its versions.
+ * undefined = keep the saved passwords, [] = remove them, list = replace them.
+ */
+export const rulePasswordsSchema = z.object({
+  filePasswords: z.array(z.string().min(1, 'Password cannot be empty').max(200)).max(5, 'At most 5 passwords').optional(),
+});
 
 export const mailboxInputSchema = z.object({
   email: z.string().trim().toLowerCase().pipe(z.email('Enter a valid email address')), // trim before checking

@@ -6,6 +6,7 @@ import {
   type AttachmentKind,
   type ChangeBatch,
   type ConnectionTestResult,
+  type EmailContent,
   type GetChangesOptions,
   type MailAddress,
   type MailEnvelope,
@@ -177,6 +178,43 @@ export class M365Provider implements MailProvider {
       { prefer: ['outlook.body-content-type="text"'] },
     );
     return m.body?.content ?? '';
+  }
+
+  /** Email body + header fields + embedded pictures, for "Save the email as PDF" (GET only). */
+  async getEmailContent(ref: MailRef): Promise<EmailContent> {
+    const base = `/users/${enc(ref.mailbox)}/messages/${enc(ref.messageId)}`;
+    const m = await this.graph.json<GraphMessage & { body?: { contentType?: string; content?: string } }>(
+      `${base}?$select=subject,from,sender,toRecipients,ccRecipients,receivedDateTime,body`,
+    );
+    const html = m.body?.contentType?.toLowerCase() === 'html';
+    const content = m.body?.content ?? '';
+    const attachments = await this.listAttachments(ref);
+
+    // Pictures referenced as cid: are attachments; fetch the small image ones (max 30, 3 MB each).
+    const inlineImages: EmailContent['inlineImages'] = [];
+    if (html && /cid:/i.test(content)) {
+      const images = attachments.filter((a) => a.kind === 'file' && a.size <= 3 * 1024 * 1024 && (a.contentType?.startsWith('image/') || /\.(png|jpe?g|gif|bmp|webp)$/i.test(a.name))).slice(0, 30);
+      for (const a of images) {
+        const full = await this.graph.json<{ contentId?: string; contentBytes?: string; contentType?: string; name?: string }>(`${base}/attachments/${enc(a.id)}`);
+        if (!full.contentBytes) continue;
+        inlineImages.push({
+          contentId: (full.contentId ?? a.name).replace(/^<|>$/g, ''),
+          name: a.name,
+          contentType: full.contentType ?? a.contentType ?? 'image/png',
+          base64: full.contentBytes,
+        });
+      }
+    }
+    return {
+      subject: m.subject ?? '',
+      from: addr(m.from ?? m.sender),
+      to: (m.toRecipients ?? []).map(addr),
+      cc: (m.ccRecipients ?? []).map(addr),
+      receivedAt: new Date(m.receivedDateTime!),
+      body: { type: html ? 'html' : 'text', content },
+      attachmentNames: attachments.filter((a) => !a.isInline).map((a) => a.name),
+      inlineImages,
+    };
   }
 
   async listAttachments(ref: MailRef): Promise<AttachmentInfo[]> {

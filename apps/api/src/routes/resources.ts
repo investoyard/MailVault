@@ -201,6 +201,7 @@ export async function resourceRoutes(app: FastifyInstance) {
     const rules = await prisma.rule.findMany({
       where: scope ? { mailboxId: { in: scope } } : {},
       orderBy: [{ mailbox: { email: 'asc' } }, { priority: 'asc' }],
+      omit: { filePasswords: true },
       include: {
         mailbox: { select: { email: true } },
         destination: { select: { name: true, basePath: true, status: true } },
@@ -219,13 +220,16 @@ export async function resourceRoutes(app: FastifyInstance) {
     return rule;
   });
 
+  const PROTECTION_LABEL: Record<string, string> = { NONE: 'Not protected', UNLOCKED: 'Password removed', RESTRICTIONS_REMOVED: 'Restrictions removed', STILL_LOCKED: 'Still password-protected' };
+
   // ─────────── Retry / manual download ───────────
   app.post('/history/:id/retry', { preHandler: requirePermission('history', 'execute') }, async (req, reply) => {
     const { id } = idParam.parse(req.params);
     const d = await prisma.attachmentDownload.findUniqueOrThrow({ where: { id }, include: { match: { select: { message: { select: { mailboxId: true } } } } } });
     assertMailbox(req, d.match.message.mailboxId);
-    if (!['FAILED', 'WAITING_DESTINATION', 'RETRYING', 'AWAITING_MANUAL'].includes(d.status)) {
-      return reply.code(400).send({ error: 'Only failed, waiting or manual downloads can be retried' });
+    const lockedCopy = d.status === 'SUCCESS' && d.protection === 'STILL_LOCKED';
+    if (!lockedCopy && !['FAILED', 'WAITING_DESTINATION', 'RETRYING', 'AWAITING_MANUAL'].includes(d.status)) {
+      return reply.code(400).send({ error: 'Only failed, waiting, manual or still password-protected downloads can be retried' });
     }
     await prisma.attachmentDownload.update({
       where: { id },
@@ -267,7 +271,7 @@ export async function resourceRoutes(app: FastifyInstance) {
   app.post('/history/retry-bulk', { preHandler: requirePermission('history', 'execute') }, async (req) => {
     const { ids } = z.object({ ids: z.array(z.string().min(1)).min(1).max(500) }).parse(req.body);
     const { count } = await prisma.attachmentDownload.updateMany({
-      where: { id: { in: ids }, status: { in: ['FAILED', 'WAITING_DESTINATION', 'RETRYING'] }, ...(mailboxScope(req) ? { match: { message: { mailboxId: { in: mailboxScope(req) } } } } : {}) },
+      where: { id: { in: ids }, OR: [{ status: { in: ['FAILED', 'WAITING_DESTINATION', 'RETRYING'] } }, { status: 'SUCCESS', protection: 'STILL_LOCKED' }], ...(mailboxScope(req) ? { match: { message: { mailboxId: { in: mailboxScope(req) } } } } : {}) },
       data: { status: 'PENDING', attempts: 0, nextAttemptAt: null, errorCode: null, errorMessage: null },
     });
     if (count) await (await getQueue()).send(QUEUES.processDownloads, {}, { singletonKey: 'all' });
@@ -301,6 +305,7 @@ export async function resourceRoutes(app: FastifyInstance) {
       { header: 'Downloaded', key: 'downloaded', width: 19, style: { numFmt: 'dd-mmm-yyyy hh:mm' } },
       { header: 'Status', key: 'status', width: 14 },
       { header: 'Reason / error', key: 'note', width: 50 },
+      { header: 'Password', key: 'protection', width: 22 },
     ];
     ws.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
     ws.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF3C2E7E' } };
@@ -339,13 +344,14 @@ export async function resourceRoutes(app: FastifyInstance) {
           downloaded: local(r.downloadedAt),
           status: r.status,
           note: r.errorMessage ?? r.skipReason ?? '',
+          protection: PROTECTION_LABEL[r.protection ?? ''] ?? '',
         }).commit();
       }
       written += batch.length;
       if (batch.length < 1000 || written >= 200_000) break;
       cursor = batch.at(-1)!.id;
     }
-    ws.autoFilter = { from: 'A1', to: 'M1' };
+    ws.autoFilter = { from: 'A1', to: 'N1' };
     await wb.commit();
     await audit(req.user.id, 'HISTORY_EXPORTED', 'AttachmentDownload', null, null, { rows: written, filters: q }, req.ip);
     return reply;
@@ -421,8 +427,8 @@ export async function resourceRoutes(app: FastifyInstance) {
         skip: (q.page - 1) * q.pageSize,
         take: q.pageSize,
         include: {
-          attachment: { select: { name: true, sizeBytes: true, contentType: true } },
-          extracted: { orderBy: { innerPath: "asc" }, select: { id: true, innerPath: true, fileName: true, status: true, reason: true, destinationPath: true, bytes: true } },
+          attachment: { select: { name: true, sizeBytes: true, contentType: true, kind: true } },
+          extracted: { orderBy: { innerPath: "asc" }, select: { id: true, innerPath: true, fileName: true, status: true, reason: true, destinationPath: true, bytes: true, protection: true } },
           match: {
             select: {
               correlationId: true,

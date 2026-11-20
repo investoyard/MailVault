@@ -1,6 +1,6 @@
 import { emitWebhookEvent, prisma } from '@mailvault/db';
 import { GraphError, explainGraphError } from '@mailvault/m365';
-import type { ManualDownloadJob } from '@mailvault/shared';
+import { downloadConfigSchema, type ManualDownloadJob } from '@mailvault/shared';
 import { plog } from './alerts.js';
 import type { PipelineContext } from './context.js';
 import { ensureMessage, processMessage, type RuleWithDest } from './evaluate.js';
@@ -42,7 +42,8 @@ export async function runHistoricalJob(jobId: string, ctx: PipelineContext): Pro
           folderId: folder.providerFolderId,
           receivedFrom: job.dateFrom,
           receivedTo: job.dateTo,
-          onlyWithAttachments: true,
+          // Emails without attachments matter only to rules that save the email itself as PDF.
+          onlyWithAttachments: !rules.some((r) => downloadConfigSchema.parse(r.download).emailPdf !== 'OFF'),
           pageSize: 50,
           pageCursor: cp.cursor,
         });
