@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Alert, App, Button, Card, Col, DatePicker, Divider, Drawer, Form, Input, InputNumber, Modal, Radio, Row, Select, Skeleton, Space, Switch, Tag, Tooltip, Typography } from 'antd';
-import { BulbOutlined, DeleteOutlined, ExperimentOutlined, FolderOpenOutlined, InfoCircleOutlined, KeyOutlined, LockOutlined, PlusOutlined } from '@ant-design/icons';
+import { Alert, App, Button, Card, Col, DatePicker, Divider, Form, Input, InputNumber, Modal, Radio, Row, Select, Skeleton, Space, Switch, Tag, Tooltip, Typography } from 'antd';
+import { ArrowLeftOutlined, BulbOutlined, DeleteOutlined, ExperimentOutlined, FolderOpenOutlined, InfoCircleOutlined, KeyOutlined, LockOutlined, PlusOutlined } from '@ant-design/icons';
 import dayjs, { type Dayjs } from 'dayjs';
 import {
   buildDestinationFolder,
@@ -16,6 +16,7 @@ import {
 } from '@mailvault/core';
 import type { DestinationStatus, RuleInput } from '@mailvault/shared';
 import { api } from '../api';
+import { useConfirm } from './confirm';
 import { DestinationStatusTag } from './ui';
 import { TestResults, type TestEmail } from './TestResults';
 
@@ -95,8 +96,10 @@ function Section({ title, hint, children }: { title: string; hint?: string; chil
   );
 }
 
-export function RuleEditor({ open, rule, onClose }: { open: boolean; rule: RuleRecord | null; onClose: () => void }) {
+/** Full-page rule editor (routes /rules/new and /rules/:id). onDone returns to the rules list. */
+export function RuleEditor({ rule, onDone }: { rule: RuleRecord | null; onDone: () => void }) {
   const { message } = App.useApp();
+  const confirm = useConfirm();
   const qc = useQueryClient();
   const [form] = Form.useForm<FormValues>();
   const mailboxes = useQuery({ queryKey: ['mailboxes'], queryFn: () => api.get<Mailbox[]>('/api/mailboxes') });
@@ -105,8 +108,13 @@ export function RuleEditor({ open, rule, onClose }: { open: boolean; rule: RuleR
   // File passwords: null = keep what is saved, list = replace (empty list = remove).
   const [passwords, setPasswords] = useState<string[] | null>(null);
 
+  // Fill the form once per rule. Background refreshes of the mailbox/folder lists must not wipe what was typed.
+  const filledFor = useRef<string | null>(null);
   useEffect(() => {
-    if (!open) return;
+    const key = rule?.id ?? 'new';
+    if (filledFor.current === key) return;
+    if (!rule && (!mailboxes.data || !destinations.data)) return; // new rule: wait for the default mailbox/folder
+    filledFor.current = key;
     form.resetFields();
     setPasswords(null);
     if (rule) {
@@ -120,7 +128,34 @@ export function RuleEditor({ open, rule, onClose }: { open: boolean; rule: RuleR
     } else {
       form.setFieldsValue({ ...DEFAULTS, mailboxId: mailboxes.data?.[0]?.id ?? '', download: { ...DEFAULTS.download, destinationId: destinations.data?.[0]?.id ?? '' } });
     }
-  }, [open, rule, form, mailboxes.data, destinations.data]);
+    // Snapshot of the loaded values (after the fields settle) to tell whether anything really changed.
+    setTimeout(() => (snapshot.current = JSON.stringify(form.getFieldsValue(true))), 0);
+  }, [rule, form, mailboxes.data, destinations.data]);
+
+  // Leaving with unsaved changes asks first (Back/Cancel here; closing or reloading the tab via the browser).
+  const snapshot = useRef<string | null>(null);
+  const savedRef = useRef(false);
+  const passwordsRef = useRef(passwords);
+  passwordsRef.current = passwords;
+  const dirty = () =>
+    !savedRef.current && snapshot.current !== null && (passwordsRef.current !== null || JSON.stringify(form.getFieldsValue(true)) !== snapshot.current);
+  useEffect(() => {
+    const warn = (e: BeforeUnloadEvent) => {
+      if (dirty()) e.preventDefault();
+    };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [form, passwords]);
+  const leave = () => {
+    if (!dirty()) return onDone();
+    void confirm({
+      tone: 'warning',
+      title: 'Leave without saving?',
+      description: 'Your changes to this rule will be lost.',
+      okText: 'Leave without saving',
+      cancelText: 'Keep editing',
+    }).then((ok) => ok && onDone());
+  };
 
   const toInput = (v: FormValues): RuleInput => {
     const { range, ...conditions } = v.conditions;
@@ -164,8 +199,9 @@ export function RuleEditor({ open, rule, onClose }: { open: boolean; rule: RuleR
     },
     onSuccess: () => {
       message.success(rule ? `Rule saved as version ${rule.currentVersion + 1}. Changes apply to new emails.` : 'Rule created. It applies to emails received from now on.');
+      savedRef.current = true;
       void qc.invalidateQueries({ queryKey: ['rules'] });
-      onClose();
+      onDone();
     },
     onError: (e: Error) => message.error(e.message),
   });
@@ -224,23 +260,20 @@ export function RuleEditor({ open, rule, onClose }: { open: boolean; rule: RuleR
   };
 
   return (
-    <Drawer
-      open={open}
-      onClose={onClose}
-      width={1080}
-      destroyOnHidden
-      title={rule ? `Edit rule · ${rule.name}` : 'New download rule'}
-      extra={
+    <>
+      <div className="mv-editor-bar">
+        <Button icon={<ArrowLeftOutlined />} onClick={leave}>
+          Back to rules
+        </Button>
+        <h1 className="mv-page-title mv-editor-title">{rule ? `Edit rule · ${rule.name}` : 'New download rule'}</h1>
         <Space>
           {rule && <Tag>v{rule.currentVersion}</Tag>}
-          <Button onClick={onClose}>Cancel</Button>
+          <Button onClick={leave}>Cancel</Button>
           <Button type="primary" loading={save.isPending} onClick={() => form.submit()}>
             {rule ? 'Save changes' : 'Create rule'}
           </Button>
         </Space>
-      }
-      styles={{ body: { background: '#F5F7FB', padding: 20 } }}
-    >
+      </div>
       <Row gutter={20}>
         <Col xs={24} lg={15}>
           <Form form={form} layout="vertical" onFinish={(v) => save.mutate(v)} scrollToFirstError>
@@ -557,7 +590,7 @@ export function RuleEditor({ open, rule, onClose }: { open: boolean; rule: RuleR
         </Col>
 
         <Col xs={24} lg={9}>
-          <div style={{ position: 'sticky', top: 0 }}>
+          <div className="mv-editor-side">
             <Card className="mv-card" size="small" title={<Space><BulbOutlined style={{ color: '#3C2E7E' }} />Rule summary</Space>} styles={{ body: { padding: 18 } }}>
               <ul style={{ paddingLeft: 18, margin: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {summary.map((l) => (
@@ -633,7 +666,7 @@ export function RuleEditor({ open, rule, onClose }: { open: boolean; rule: RuleR
           </>
         )}
       </Modal>
-    </Drawer>
+    </>
   );
 }
 

@@ -1,3 +1,4 @@
+import { useNavigate } from 'react-router-dom';
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { App, Button, Card, Input, Select, Space, Switch, Table, Tag, Tooltip, Typography } from 'antd';
@@ -7,7 +8,6 @@ import { api } from '../api';
 import { useAuth } from '../auth';
 import { DestinationStatusTag, EmptyState, PageHeader } from '../components/ui';
 import { useConfirm } from '../components/confirm';
-import { RuleEditor, type RuleRecord } from '../components/RuleEditor';
 import { fmtNumber } from '../format';
 
 interface Rule {
@@ -45,14 +45,8 @@ export function RulesPage() {
   const qc = useQueryClient();
   const [search, setSearch] = useState('');
   const [mailbox, setMailbox] = useState<string | undefined>();
-  const [editor, setEditor] = useState<{ open: boolean; rule: RuleRecord | null }>({ open: false, rule: null });
-  const openEdit = async (id: string) => {
-    try {
-      setEditor({ open: true, rule: await api.get<RuleRecord>(`/api/rules/${id}`) });
-    } catch (e) {
-      message.error((e as Error).message);
-    }
-  };
+  const navigate = useNavigate();
+  const openEdit = (id: string) => navigate(`/rules/${id}`);
 
   const q = useQuery({ queryKey: ['rules'], queryFn: () => api.get<Rule[]>('/api/rules') });
 
@@ -77,7 +71,7 @@ export function RulesPage() {
         subtitle="Rules decide which emails are picked up and where their attachments are saved. Lower priority numbers run first."
         extra={
           can('rules', 'create') && (
-            <Button type="primary" icon={<PlusOutlined />} onClick={() => setEditor({ open: true, rule: null })}>
+            <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate('/rules/new')}>
               New rule
             </Button>
           )
@@ -167,7 +161,7 @@ export function RulesPage() {
                   />
                   {can('rules', 'edit') && (
                     <Tooltip title="Edit rule">
-                      <Button icon={<EditOutlined />} onClick={() => void openEdit(r.id)} aria-label={`Edit ${r.name}`} />
+                      <Button icon={<EditOutlined />} onClick={() => openEdit(r.id)} aria-label={`Edit ${r.name}`} />
                     </Tooltip>
                   )}
                 </Space>
@@ -177,7 +171,6 @@ export function RulesPage() {
         />
       </Card>
 
-      <RuleEditor open={editor.open} rule={editor.rule} onClose={() => setEditor({ open: false, rule: null })} />
     </>
   );
 }

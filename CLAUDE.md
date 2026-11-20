@@ -122,5 +122,7 @@ npx tsx scripts/md-to-pdf.ts <file.md> [out.pdf]  # styled PDF of a doc via Edge
   download.ts fetches `getEmailContent` (GET only, body not stored), core/src/email-html.ts sanitizes + builds HTML (CSP), worker
   pipeline/email-pdf.ts renders with installed Edge via playwright-core (JS off, network blocked, shared browser, max 2 parallel).
   Historical jobs include emails without attachments when a selected rule saves email PDFs.
+- Rule editor is a page, not a drawer: routes /rules/new and /rules/:id (pages/RuleEditorPage.tsx -> components/RuleEditor.tsx).
+  The form is filled once per rule (background refetches must not reset it); Back/Cancel compare values with a snapshot and confirm.
 - Deploy on this server: `npm run build:api && npm run build:web`, touch `iisnode/restart.txt` (never commit it), restart the worker
   via POST /api/system/worker/restart. Schema changes: write the migration SQL, then `npm run db:deploy`.

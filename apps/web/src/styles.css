@@ -895,3 +895,37 @@ body {
   background: #f6f4fc !important;
   outline: none;
 }
+
+/* ───────── Rule editor page: action bar stays visible under the top header ───────── */
+.mv-editor-bar {
+  position: sticky;
+  top: 64px;
+  z-index: 9;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin: -24px -24px 20px;
+  padding: 14px 24px;
+  background: rgba(245, 247, 251, 0.94);
+  backdrop-filter: blur(6px);
+  border-bottom: 1px solid var(--mv-border);
+}
+.mv-editor-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 20px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mv-editor-side {
+  position: sticky;
+  top: 140px;
+}
+@media (max-width: 991px) {
+  .mv-editor-side { position: static; }
+}
+@media (max-width: 768px) {
+  .mv-editor-bar { margin: -16px -16px 16px; padding: 12px 16px; flex-wrap: wrap; }
+  .mv-editor-title { order: 3; flex-basis: 100%; }
+}

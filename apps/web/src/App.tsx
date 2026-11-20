@@ -6,6 +6,7 @@ import { LoginPage } from './pages/LoginPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { AccountsPage } from './pages/AccountsPage';
 import { RulesPage } from './pages/RulesPage';
+import { RuleEditorPage } from './pages/RuleEditorPage';
 import { HistoryPage } from './pages/HistoryPage';
 import { DestinationsPage } from './pages/DestinationsPage';
 import { NotificationsPage } from './pages/NotificationsPage';
@@ -43,6 +44,7 @@ export function App() {
         <Route index element={<DashboardPage />} />
         <Route path="accounts" element={<AccountsPage />} />
         <Route path="rules" element={<RulesPage />} />
+        <Route path="rules/:id" element={<RuleEditorPage />} />
         <Route path="rule-testing" element={<RuleTestingPage />} />
         <Route path="historical-jobs" element={<HistoricalJobsPage />} />
         <Route path="history" element={<HistoryPage />} />
