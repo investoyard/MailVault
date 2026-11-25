@@ -72,7 +72,8 @@ npx tsx scripts/md-to-pdf.ts <file.md> [out.pdf]  # styled PDF of a doc via Edge
 - Store email **metadata only**, never bodies (the email-PDF feature fetches the body at save time and writes it only into
   the PDF). Stream attachments to disk; never buffer whole files.
 - Write files to `<folder>\.mailvault-tmp\*.part`, then move into place (no half-written files).
-- Sanitize every file/folder name with `sanitizeFileName`; pattern tokens via `renderPattern`.
+- Sanitize every file name with `sanitizeFileName` and folder name with `sanitizeFolderName` (200 chars, no extension logic;
+  used by `buildDestinationFolder`); pattern tokens via `renderPattern` (each token value max 80 chars).
   File names only via `buildFileName` (core/src/path-pattern.ts, shared by worker + rule editor preview): the pattern is the
   name *without* extension, the original extension is appended once (`{OriginalName}` in a longer pattern = base name,
   trailing `{Ext}` dropped). Date tokens: `{Date:<fmt>}` = received date, `{Today:<fmt>}` = save date (`ctx.now`),

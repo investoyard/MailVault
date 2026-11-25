@@ -626,7 +626,16 @@ export function RuleEditor({ rule, onDone }: { rule: RuleRecord | null; onDone: 
                       </div>
                     )}
                   </div>
-                  {preview.dest?.status === 'UNAVAILABLE' && <Alert style={{ marginTop: 10 }} type="error" showIcon message="This destination folder is currently unavailable." />}
+                  {`${preview.folder}\\${preview.file}`.length > 250 && (
+                    <Alert
+                      style={{ marginTop: 10 }}
+                      type="warning"
+                      showIcon
+                      message={`Long path (${`${preview.folder}\\${preview.file}`.length} characters)`}
+                      description="MailVault can save it, but some Windows programs and File Explorer have trouble opening paths over 260 characters. Consider shorter folder names."
+                    />
+                  )}
+                  {preview.dest?.status === 'UNAVAILABLE' &&<Alert style={{ marginTop: 10 }} type="error" showIcon message="This destination folder is currently unavailable." />}
                 </>
               ) : (
                 <span className="mv-muted">Choose a destination to see the path.</span>

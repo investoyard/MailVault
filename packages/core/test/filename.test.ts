@@ -75,6 +75,20 @@ describe('path patterns', () => {
     expect(folder).toBe('D:\\Out\\2026-27\\April, 2026');
   });
 
+  it('keeps long typed folder names whole (was cut at 80 characters)', () => {
+    const long = 'Client Daily Statement-Orient- 0021 Fin Order API Futures and Options- Gold Silver'; // 82 characters
+    const folder = buildDestinationFolder(
+      '\\\\fs\\share',
+      { subfolderPattern: `{FYFull}/\\20. Orient Data\\${long}\\{MMM}, {yyyy}` },
+      { ...ctx, receivedAt: new Date('2026-11-25T10:00:00+05:30') },
+    );
+    expect(folder).toBe(`\\\\fs\\share\\2026-2027\\20. Orient Data\\${long}\\Nov, 2026`);
+    // Still safe: invalid characters replaced, trailing dots dropped, very long names limited to 200.
+    expect(buildDestinationFolder('D:\\Out', { subfolderPattern: 'A:B?. ' }, ctx)).toBe('D:\\Out\\A_B_');
+    expect(buildDestinationFolder('D:\\Out', { subfolderPattern: 'x'.repeat(300) }, ctx)).toBe(`D:\\Out\\${'x'.repeat(200)}`);
+    expect(buildDestinationFolder('D:\\Out', { subfolderPattern: '..\\con\\ok' }, ctx)).toBe('D:\\Out\\_con\\ok');
+  });
+
   it('renders custom date formats for the email date and today', () => {
     const now = new Date('2026-11-19T04:00:00Z'); // 09:30 on 19 Nov in IST
     expect(renderPattern('{Date:dd-MM-yyyy}', ctx)).toBe('13-11-2026');

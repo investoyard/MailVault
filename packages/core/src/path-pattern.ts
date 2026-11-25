@@ -1,4 +1,4 @@
-import { sanitizeFileName } from './filename.js';
+import { sanitizeFileName, sanitizeFolderName } from './filename.js';
 
 export interface PatternContext {
   receivedAt: Date;
@@ -196,7 +196,9 @@ export function buildDestinationFolder(
 
   const rendered = segments
     .filter((s) => s && s !== '.' && s !== '..')
-    .map((s) => sanitizeFileName(renderPattern(s, ctx), 80, '_'));
+    // Folder names up to 200 characters (was 80, which cut long typed names such as "… Gold Silver" to "… Gold Silv").
+    // Each placeholder value is still limited to 80 characters inside renderPattern.
+    .map((s) => sanitizeFolderName(renderPattern(s, ctx)));
 
   const base = basePath.replace(/[\\/]+$/, '');
   return [base, ...rendered].join('\\');

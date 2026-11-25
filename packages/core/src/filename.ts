@@ -29,6 +29,20 @@ export function sanitizeFileName(input: string, maxLength = 180, fallback = 'att
   return `${base}${ext}`;
 }
 
+/**
+ * Makes one folder name safe on Windows. Unlike sanitizeFileName there is no extension:
+ * "20. Orient Data" keeps its dot as text. Windows allows 255 characters per folder name;
+ * 200 leaves room so long descriptive names (e.g. "…Futures and Options- Gold Silver") are kept whole.
+ */
+export function sanitizeFolderName(input: string, maxLength = 200, fallback = '_'): string {
+  let name = input.replace(INVALID_CHARS, '_').replace(/\s+/g, ' ').trim();
+  name = name.replace(/[. ]+$/g, '').replace(/^\.+/, '');
+  if (!name) name = fallback;
+  if (WINDOWS_RESERVED.test(name)) name = `_${name}`;
+  if (name.length > maxLength) name = name.slice(0, maxLength).replace(/[. ]+$/g, '');
+  return name;
+}
+
 /** Lower-case extension without the dot, or '' when there is none. */
 export function fileExtension(name: string): string {
   const dot = name.lastIndexOf('.');
