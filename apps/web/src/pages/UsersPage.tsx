@@ -154,6 +154,18 @@ function UserDrawer({ open, user, onClose }: { open: boolean; user: User | null;
             <Input placeholder="priya@company.com" />
           </Form.Item>
         </Space>
+        {user && (
+          // View only: the sign-in name can't be changed (history and audit records refer to it).
+          <Form.Item label="Username (used to sign in)" tooltip="Cannot be changed. Use the copy button to send it to the user." style={{ maxWidth: 360 }}>
+            <Input
+              className="mv-mono"
+              value={user.username}
+              readOnly
+              variant="filled"
+              suffix={<Typography.Text copyable={{ text: user.username, tooltips: ['Copy username', 'Copied'] }} />}
+            />
+          </Form.Item>
+        )}
         {!user && (
           <Space size={16} style={{ display: 'flex' }} align="start">
             <Form.Item name="username" label="Username" rules={[{ required: true, pattern: /^[a-z0-9._-]{3,40}$/i, message: '3–40 letters, numbers, dot, dash or underscore' }]} style={{ flex: 1, minWidth: 260 }}>
@@ -273,7 +285,14 @@ export function UsersPage() {
                     <div style={{ fontWeight: 600 }}>
                       {u.displayName} {u.id === me?.id && <Tag style={{ marginLeft: 4 }}>You</Tag>}
                     </div>
-                    <div className="mv-muted" style={{ fontSize: 12.5 }}>{u.email ?? u.username}</div>
+                    {/* Username = what they type to sign in; shown so admins can tell someone who forgot it */}
+                    <div className="mv-muted" style={{ fontSize: 12.5 }}>
+                      Username:{' '}
+                      <Typography.Text className="mv-mono" copyable={{ text: u.username, tooltips: ['Copy username', 'Copied'] }} style={{ fontSize: 12.5 }}>
+                        {u.username}
+                      </Typography.Text>
+                    </div>
+                    {u.email && <div className="mv-muted" style={{ fontSize: 12.5 }}>{u.email}</div>}
                   </div>
                 </Space>
               ),
