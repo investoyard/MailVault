@@ -332,6 +332,15 @@ body {
   color: var(--mv-muted);
 }
 
+/* Dashboard lists that could grow long (Destination folders): about five rows, then scroll */
+.mv-scroll-list {
+  max-height: 320px;
+  overflow-y: auto;
+  margin-right: -8px;
+  padding-right: 8px;
+  scrollbar-width: thin;
+}
+
 /* Dashboard "Downloads by rule": counts that open the filtered history */
 a.mv-rule-stat {
   color: inherit;

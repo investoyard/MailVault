@@ -98,7 +98,7 @@ export async function dashboardRoutes(app: FastifyInstance) {
       }),
       prisma.destination.findMany({
         where: ids ? { rules: { some: { mailboxId: mbIn } } } : {},
-        orderBy: { name: 'asc' },
+        orderBy: { createdAt: 'desc' }, // newest first; the dashboard puts folders with problems on top
         select: { id: true, name: true, basePath: true, status: true, freeSpaceMb: true, lastCheckedAt: true },
       }),
       prisma.serviceHeartbeat.findFirst({ where: { service: 'worker' }, orderBy: { lastBeatAt: 'desc' } }),

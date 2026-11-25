@@ -254,11 +254,27 @@ export function DashboardPage() {
             )}
           </Card>
 
-          <Card className="mv-card" title="Destination folders" style={{ marginTop: 16 }} extra={<Button type="link" size="small" onClick={() => navigate('/destinations')}>Manage</Button>}>
+          <Card
+            className="mv-card"
+            title={
+              <span>
+                Destination folders
+                {!!d?.destinations.length && (
+                  <span className="mv-muted" style={{ fontWeight: 400, fontSize: 13, marginLeft: 8 }}>
+                    {folderSummary(d.destinations)}
+                  </span>
+                )}
+              </span>
+            }
+            style={{ marginTop: 16 }}
+            extra={<Button type="link" size="small" onClick={() => navigate('/destinations')}>Manage</Button>}
+          >
             {!d?.destinations.length ? (
               <EmptyState title="No folders configured" />
             ) : (
-              d.destinations.map((f) => (
+              // Folders with problems first, then newest added; about five rows visible, the rest scrolls.
+              <div className="mv-scroll-list">
+              {sortFolders(d.destinations).map((f) => (
                 <div className="mv-health-row" key={f.id}>
                   <span className="mv-dot" style={{ background: destinationColor(f.status) }} />
                   <div style={{ flex: 1, minWidth: 0 }}>
@@ -269,11 +285,25 @@ export function DashboardPage() {
                     {f.freeSpaceMb !== null ? `${fmtBytes(f.freeSpaceMb * 1024 * 1024)} free` : '—'}
                   </span>
                 </div>
-              ))
+              ))}
+              </div>
             )}
           </Card>
         </Col>
       </Row>
     </>
   );
+}
+
+type FolderRow = Summary['destinations'][number];
+const FOLDER_RANK: Record<DestinationStatus, number> = { UNAVAILABLE: 0, LOW_SPACE: 1, UNKNOWN: 2, HEALTHY: 3 };
+
+/** Problems first (unavailable, low space, not checked yet); the API order (newest added first) within each group. */
+function sortFolders(rows: FolderRow[]): FolderRow[] {
+  return rows.map((f, i) => ({ f, i })).sort((a, b) => FOLDER_RANK[a.f.status] - FOLDER_RANK[b.f.status] || a.i - b.i).map((x) => x.f);
+}
+
+function folderSummary(rows: FolderRow[]): string {
+  const bad = rows.filter((f) => f.status === 'UNAVAILABLE' || f.status === 'LOW_SPACE').length;
+  return `${rows.length} · ${bad ? `${bad} need${bad === 1 ? 's' : ''} attention` : 'all OK'}`;
 }
