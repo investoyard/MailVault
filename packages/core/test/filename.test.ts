@@ -59,6 +59,10 @@ describe('path patterns', () => {
     expect(renderPattern('{MMMM}, {yyyy}', ctx)).toBe('November, 2026');
     expect(renderPattern('{MMM}-{yy}', ctx)).toBe('Nov-26');
     expect(renderPattern('{Quarter} {FY} {FYQuarter}', ctx)).toBe('Q4 2026-27 Q3');
+    expect(renderPattern('FY {FYFull}', ctx)).toBe('FY 2026-2027');
+    expect(renderPattern('{FYFull}', { ...ctx, receivedAt: new Date('2027-03-31T23:00:00+05:30') })).toBe('2026-2027');
+    expect(renderPattern('{FYFull}', { ...ctx, receivedAt: new Date('2027-04-01T00:30:00+05:30') })).toBe('2027-2028');
+    expect(unknownTokens('{FYFull}\{FY}')).toEqual([]);
     const at = (iso: string) => renderPattern('{MMMM} {Quarter} {FY} {FYQuarter}', { ...ctx, receivedAt: new Date(iso) });
     expect(at('2026-04-01T00:00:00+05:30')).toBe('April Q2 2026-27 Q1');
     expect(at('2026-03-31T23:59:00+05:30')).toBe('March Q1 2025-26 Q4');

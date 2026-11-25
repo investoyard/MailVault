@@ -76,7 +76,7 @@ npx tsx scripts/md-to-pdf.ts <file.md> [out.pdf]  # styled PDF of a doc via Edge
   File names only via `buildFileName` (core/src/path-pattern.ts, shared by worker + rule editor preview): the pattern is the
   name *without* extension, the original extension is appended once (`{OriginalName}` in a longer pattern = base name,
   trailing `{Ext}` dropped). Date tokens: `{Date:<fmt>}` = received date, `{Today:<fmt>}` = save date (`ctx.now`),
-  fmt parts `yyyy yy MMMM MMM MM M dd d HH mm ss` + `- _ . space ,`; `{FY}`/`{FYQuarter}` = Indian April–March year.
+  fmt parts `yyyy yy MMMM MMM MM M dd d HH mm ss` + `- _ . space ,`; `{FY}` (2026-27) / `{FYFull}` (2026-2027) / `{FYQuarter}` = Indian April–March year.
   New tokens go in `PATTERN_TOKENS` + `PATTERN_TOKEN_HELP`; `unknownTokens()` drives the editor's validation.
 - Dates for folders/"today" use the business time zone (`BUSINESS_TIMEZONE`, default Asia/Kolkata).
 - API: every route has a `requirePermission(module, action)` guard; validate input with zod; write `audit()`.
