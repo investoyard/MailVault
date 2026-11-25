@@ -254,10 +254,32 @@ export function HistoryPage() {
             { title: 'Mailbox', width: 190, responsive: ['xxl'], render: (_, r) => <Typography.Text type="secondary" ellipsis style={{ maxWidth: 170 }}>{r.match.message.mailbox.email}</Typography.Text> },
             {
               title: 'Status',
-              width: 160,
+              width: 240,
+              // The reason is shown right under the tag (why it was skipped / failed), full text on hover and in the details.
               render: (_, r) => {
                 const note = r.errorMessage ?? r.skipReason;
-                return note ? <Tooltip title={note}><span><DownloadStatusTag status={r.status} /></span></Tooltip> : <DownloadStatusTag status={r.status} />;
+                const simulated = r.status === 'SKIPPED' && /^Simulation:/i.test(r.skipReason ?? '');
+                return (
+                  <div style={{ maxWidth: 240 }}>
+                    <Space size={4} wrap>
+                      <DownloadStatusTag status={r.status} />
+                      {simulated && (
+                        <Tooltip title="Created by a historical job in Simulate mode: nothing was saved, it only shows what would happen">
+                          <Tag color="blue">Test run</Tag>
+                        </Tooltip>
+                      )}
+                    </Space>
+                    {note && (
+                      <Typography.Text
+                        type={r.status === 'FAILED' ? 'danger' : 'secondary'}
+                        ellipsis={{ tooltip: note }}
+                        style={{ display: 'block', fontSize: 12.5, marginTop: 2, maxWidth: 230 }}
+                      >
+                        {simulated ? note.replace(/^Simulation:\s*/i, '') : note}
+                      </Typography.Text>
+                    )}
+                  </div>
+                );
               },
             },
             { title: 'Downloaded', width: 150, responsive: ['xxl'], render: (_, r) => fmtDateTime(r.downloadedAt) },
@@ -276,7 +298,13 @@ export function HistoryPage() {
           <>
             {(selected.errorMessage || selected.skipReason) && (
               <Card size="small" style={{ marginBottom: 16, background: selected.status === 'FAILED' ? '#FEF2F2' : '#F8FAFC', borderColor: 'transparent' }}>
-                <b>{selected.status === 'FAILED' ? 'Error' : 'Reason'}:</b> {selected.errorMessage ?? selected.skipReason}
+                <b>{selected.status === 'FAILED' ? 'Error' : selected.status === 'SKIPPED' ? 'Why it was skipped' : 'Reason'}:</b>{' '}
+                {selected.errorMessage ?? selected.skipReason}
+                {selected.status === 'SKIPPED' && /^Simulation:/i.test(selected.skipReason ?? '') && (
+                  <div className="mv-muted" style={{ marginTop: 6 }}>
+                    This record comes from a historical job run in <b>Simulate</b> mode. Nothing was saved; it only shows where the file would go.
+                  </div>
+                )}
               </Card>
             )}
 

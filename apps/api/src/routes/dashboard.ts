@@ -5,6 +5,15 @@ import { mailboxScope, requirePermission } from '../auth.js';
 
 const ACTIVE_STATUSES = ['PENDING', 'IN_PROGRESS', 'RETRYING', 'WAITING_DESTINATION'] as const;
 
+// Simulation ("test run") records are stored as SKIPPED with a skipReason starting "Simulation:" (worker evaluate.ts).
+// They are not real outcomes, so the dashboard leaves them out; Download History still lists them (tagged "Test run").
+const SIM_PREFIX = 'Simulation:';
+const notSimulation: Prisma.AttachmentDownloadWhereInput = {
+  OR: [{ status: { not: 'SKIPPED' } }, { skipReason: null }, { NOT: { skipReason: { startsWith: SIM_PREFIX } } }],
+};
+const notSimulationSql = (alias: string) =>
+  Prisma.sql`NOT (${Prisma.raw(alias)}.status = 'SKIPPED' AND coalesce(${Prisma.raw(alias)}."skipReason", '') LIKE ${SIM_PREFIX + '%'})`;
+
 export async function dashboardRoutes(app: FastifyInstance) {
   app.get('/summary', { preHandler: requirePermission('dashboard') }, async (req) => {
     const query = req.query as { days?: string; mailboxId?: string };
@@ -19,7 +28,7 @@ export async function dashboardRoutes(app: FastifyInstance) {
       SELECT (date_trunc('day', now() AT TIME ZONE ${tz}) AT TIME ZONE ${tz}) AS start`;
     const start = today?.start ?? new Date(new Date().setHours(0, 0, 0, 0));
 
-    const dlWhere: Prisma.AttachmentDownloadWhereInput = ids ? { match: { message: { mailboxId: mbIn } } } : {};
+    const dlWhere: Prisma.AttachmentDownloadWhereInput = ids ? { AND: [notSimulation, { match: { message: { mailboxId: mbIn } } }] } : notSimulation;
     const [emailsScanned, emailsMatched, byStatus, todayByStatus, unevaluated, todayScanned] = await Promise.all([
       prisma.message.count({ where: { evaluatedAt: { not: null }, mailboxId: mbIn } }),
       prisma.message.count({ where: { matches: { some: {} }, mailboxId: mbIn } }),
@@ -42,7 +51,7 @@ export async function dashboardRoutes(app: FastifyInstance) {
         FROM "AttachmentDownload" dl
         JOIN "MessageRuleMatch" m ON m.id = dl."matchId"
         JOIN "Message" msg ON msg.id = m."messageId"
-        WHERE dl."updatedAt" >= (now() AT TIME ZONE 'UTC') - make_interval(days => (${days}::int + 1)) ${sqlMb(Prisma.sql`msg."mailboxId"`)}
+        WHERE dl."updatedAt" >= (now() AT TIME ZONE 'UTC') - make_interval(days => (${days}::int + 1)) AND ${notSimulationSql('dl')} ${sqlMb(Prisma.sql`msg."mailboxId"`)}
       )
       SELECT d.day,
         COUNT(a.status) FILTER (WHERE a.status = 'SUCCESS')::int AS success,
@@ -59,7 +68,7 @@ export async function dashboardRoutes(app: FastifyInstance) {
       FROM "Rule" r
       JOIN "Mailbox" mb ON mb.id = r."mailboxId"
       LEFT JOIN "MessageRuleMatch" m ON m."ruleId" = r.id
-      LEFT JOIN "AttachmentDownload" a ON a."matchId" = m.id
+      LEFT JOIN "AttachmentDownload" a ON a."matchId" = m.id AND ${notSimulationSql('a')}
       WHERE true ${sqlMb(Prisma.sql`r."mailboxId"`)}
       GROUP BY r.id, r.name, mb.email
       ORDER BY success DESC, r.name

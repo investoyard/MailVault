@@ -49,6 +49,10 @@ interface Summary {
   worker: { online: boolean; lastBeatAt: string } | null;
 }
 
+/** Skipped downloads (amber), distinct from saved (purple) and failed (red). */
+const SKIPPED_COLOR = '#F59E0B';
+const SKIPPED_COLOR_TEXT = '#B45309';
+
 export function DashboardPage() {
   const navigate = useNavigate();
   const [days, setDays] = useState(14);
@@ -139,7 +143,7 @@ export function DashboardPage() {
                     />
                     <Area type="monotone" dataKey="success" name="Successful" stroke={palette.primary} strokeWidth={2} fill="url(#gSuccess)" />
                     <Area type="monotone" dataKey="failed" name="Failed" stroke={palette.error} strokeWidth={2} fill="url(#gFailed)" />
-                    <Area type="monotone" dataKey="skipped" name="Skipped" stroke="#94A3B8" strokeWidth={1.5} strokeDasharray="4 4" fill="transparent" />
+                    <Area type="monotone" dataKey="skipped" name="Skipped" stroke={SKIPPED_COLOR} strokeWidth={1.5} strokeDasharray="4 4" fill="transparent" />
                   </AreaChart>
                 </ResponsiveContainer>
               )}
@@ -177,7 +181,7 @@ export function DashboardPage() {
                         <span className="mv-muted" style={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', fontSize: 13 }}>
                           {part(r.success, 'saved', 'SUCCESS')}
                           {r.failed > 0 && <> · {part(r.failed, 'failed', 'FAILED', palette.error)}</>}
-                          {r.skipped > 0 && <> · {part(r.skipped, 'skipped', 'SKIPPED')}</>}
+                          {r.skipped > 0 && <> · {part(r.skipped, 'skipped', 'SKIPPED', SKIPPED_COLOR_TEXT)}</>}
                         </span>
                       </div>
                       <Tooltip title={`${r.success} successful · ${r.failed} failed · ${r.skipped} skipped`}>
@@ -187,7 +191,7 @@ export function DashboardPage() {
                             <div style={{ display: 'flex', width: `${(total / maxRule) * 100}%`, height: '100%' }}>
                               <span style={{ flex: r.success, background: palette.primary }} />
                               <span style={{ flex: r.failed, background: palette.error }} />
-                              <span style={{ flex: r.skipped, background: '#94A3B8' }} />
+                              <span style={{ flex: r.skipped, background: SKIPPED_COLOR }} />
                             </div>
                           )}
                         </div>
