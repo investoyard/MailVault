@@ -82,6 +82,8 @@ Write-Host "Compiling the API for IIS (apps\api\dist)..."
 & $npm run build:api
 if ($LASTEXITCODE -ne 0) { Pop-Location; throw "API build failed" }
 Pop-Location
+# The build above ran elevated; let the same user rebuild/deploy later without admin rights.
+& icacls (Join-Path $root "apps\api\dist") /grant "$($env:USERDOMAIN)\$($env:USERNAME):(OI)(CI)M" /T /Q | Out-Null
 
 # Restart the IIS-hosted website so it picks up the new build/code (iisnode watches this file).
 $restartMarker = Join-Path $root "iisnode\restart.txt"

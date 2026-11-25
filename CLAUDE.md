@@ -120,6 +120,9 @@ npx tsx scripts/md-to-pdf.ts <file.md> [out.pdf]  # styled PDF of a doc via Edge
 - Alerts/delivery live in packages/db/src/ops.ts (raiseAlert, resolveAlert, dispatchPending, sendDailyDigest); API watchdog (apps/api/src/watchdog.ts) also dispatches so alerts go out when the worker is down.
 - Live updates: worker calls notifyChange() -> pg_notify('mailvault_events') -> API /api/events (SSE) -> web invalidates queries.
 - Worker runs under apps/worker/src/supervisor.mjs (`npm start`): exit code 75 = restart now, crash = restart with backoff. System Status → Restart worker -> POST /api/system/worker/restart (system:execute) -> pg-boss queue `worker-control`.
+- Destinations: PATCH/DELETE /api/destinations/:id use `requireAdminPermission` (apps/api/src/auth.ts; permission AND role Admin/Super Admin,
+  `isAdminRole` in shared/permissions.ts). Delete is permanent, refused (409) while any rule uses the folder, resolves its open alerts.
+  install-service.ps1 rebuilds apps/api/dist elevated; it now re-grants the user Modify so later `build:api` runs need no UAC.
 - Destination picker: core/src/node/folder-browse.ts (browse/test/mkdir, system folders blocked, Setting `destinations.browseRoots`). The API sends these to the worker via pg-boss queue `folder-ops` (notify) and waits for the job output (apps/api/src/folder-ops.ts), so checks use the worker's Windows account; falls back to the API when no worker is online.
 - iisnode/web.config removes WebDAV, which otherwise answers PUT/DELETE with 405 in IIS.
 - Mailbox access = Exchange RBAC for Applications (not tenant-wide Mail.Read): service principal + scope "MailVault Mailboxes"

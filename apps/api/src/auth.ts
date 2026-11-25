@@ -1,6 +1,6 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { prisma } from '@mailvault/db';
-import { ROLE_TEMPLATES, can, type Action, type Module, type PermissionSet, type Role } from '@mailvault/shared';
+import { ROLE_TEMPLATES, can, isAdminRole, type Action, type Module, type PermissionSet, type Role } from '@mailvault/shared';
 
 export interface SessionUser {
   id: string;
@@ -83,6 +83,18 @@ export function requirePermission(module: Module, action: Action = 'view') {
     if (reply.sent) return;
     if (!can(req.access.permissions, module, action)) {
       return reply.code(403).send({ error: 'You do not have permission for this action' });
+    }
+  };
+}
+
+/** Like requirePermission, but also only for Admin / Super Admin (permission overrides can't widen it). */
+export function requireAdminPermission(module: Module, action: Action) {
+  const check = requirePermission(module, action);
+  return async (req: FastifyRequest, reply: FastifyReply) => {
+    await check(req, reply);
+    if (reply.sent) return;
+    if (!isAdminRole(req.access.role)) {
+      return reply.code(403).send({ error: 'Only administrators can do this' });
     }
   };
 }

@@ -4,7 +4,7 @@ import { assertAllowed, normalizeFolderPath } from '@mailvault/core/node';
 import { browseRoots, prisma, type Prisma } from '@mailvault/db';
 import { destinationInputSchema, mailboxInputSchema, DOWNLOAD_STATUSES, QUEUES, type SyncJob } from '@mailvault/shared';
 import { M365Provider, explainGraphError, graphConfigFromEnv, GraphError } from '@mailvault/m365';
-import { assertMailbox, invalidateAccess, mailboxScope, requirePermission } from '../auth.js';
+import { assertMailbox, invalidateAccess, mailboxScope, requireAdminPermission, requirePermission } from '../auth.js';
 import { getQueue } from '../queue.js';
 import { folderOp } from '../folder-ops.js';
 
@@ -165,7 +165,52 @@ export async function resourceRoutes(app: FastifyInstance) {
     return dest;
   });
 
-  app.post('/destinations/:id/check', { preHandler: requirePermission('destinations', 'execute') }, async (req) => {
+  // Edit (Admin / Super Admin only). A changed path or setting is checked again right away.
+  app.patch('/destinations/:id', { preHandler: requireAdminPermission('destinations', 'edit') }, async (req, reply) => {
+    const { id } = idParam.parse(req.params);
+    const patch = destinationInputSchema.partial().parse(req.body);
+    const before = await prisma.destination.findUniqueOrThrow({ where: { id } });
+    if (patch.basePath !== undefined) patch.basePath = await allowedPath(patch.basePath);
+    if (patch.name !== undefined && patch.name !== before.name) {
+      const taken = await prisma.destination.findFirst({ where: { name: patch.name, id: { not: id } }, select: { id: true } });
+      if (taken) return reply.code(409).send({ error: `Another destination folder is already called "${patch.name}"` });
+    }
+    const merged = { ...before, ...patch };
+    const recheck =
+      merged.basePath !== before.basePath ||
+      merged.createIfMissing !== before.createIfMissing ||
+      merged.lowSpaceThresholdMb !== before.lowSpaceThresholdMb;
+    const health = recheck ? await testFolder(merged.basePath, merged.createIfMissing, merged.lowSpaceThresholdMb) : {};
+    const after = await prisma.destination.update({ where: { id }, data: { ...patch, ...health } });
+    await audit(req.user.id, 'DESTINATION_UPDATED', 'Destination', id, pick(before, patch), patch, req.ip);
+    return after;
+  });
+
+  // Permanent delete (Admin / Super Admin only). Refused while any rule (enabled or disabled) still uses the folder;
+  // files already saved in the folder are not touched.
+  app.delete('/destinations/:id', { preHandler: requireAdminPermission('destinations', 'delete') }, async (req, reply) => {
+    const { id } = idParam.parse(req.params);
+    const dest = await prisma.destination.findUniqueOrThrow({ where: { id } });
+    const rules = await prisma.rule.findMany({ where: { destinationId: id }, select: { name: true }, orderBy: { name: 'asc' } });
+    if (rules.length) {
+      const names = rules.slice(0, 5).map((r) => `"${r.name}"`).join(', ') + (rules.length > 5 ? ` and ${rules.length - 5} more` : '');
+      return reply.code(409).send({
+        error: `This folder is still used by ${rules.length} rule${rules.length === 1 ? '' : 's'} (${names}). Move those rules to another folder first, including disabled rules.`,
+      });
+    }
+    await prisma.$transaction([
+      prisma.destination.delete({ where: { id } }),
+      // Open "folder unavailable / low space" alerts for this folder no longer apply.
+      prisma.notification.updateMany({
+        where: { alertKey: { in: [`DESTINATION:${id}`, `DESTINATION_SPACE:${id}`] }, resolvedAt: null },
+        data: { resolvedAt: new Date() },
+      }),
+    ]);
+    await audit(req.user.id, 'DESTINATION_DELETED', 'Destination', id, { name: dest.name, basePath: dest.basePath }, null, req.ip);
+    return { ok: true };
+  });
+
+  app.post('/destinations/:id/check',{ preHandler: requirePermission('destinations', 'execute') }, async (req) => {
     const { id } = idParam.parse(req.params);
     const d = await prisma.destination.findUniqueOrThrow({ where: { id } });
     return prisma.destination.update({ where: { id }, data: await testFolder(d.basePath, d.createIfMissing, d.lowSpaceThresholdMb) });

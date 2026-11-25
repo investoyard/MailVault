@@ -71,6 +71,10 @@ export const ROLE_TEMPLATES: Record<Role, PermissionSet> = {
   },
 };
 
+/** Admin and Super Admin. Some actions (editing/deleting destination folders) stay with them even if a
+ * permission override grants the module action to an Operator or Viewer. */
+export const isAdminRole = (role: Role | undefined | null): boolean => role === 'ADMIN' || role === 'SUPER_ADMIN';
+
 export function can(perms: PermissionSet, module: Module, action: Action): boolean {
   return perms[module]?.includes(action) ?? false;
 }

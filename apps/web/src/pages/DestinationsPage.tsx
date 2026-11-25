@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Alert, App, Button, Card, Drawer, Form, Input, InputNumber, Space, Switch, Table, Tooltip, Typography } from 'antd';
-import { CopyOutlined, FolderOpenOutlined, PlusOutlined, SafetyCertificateOutlined, SyncOutlined } from '@ant-design/icons';
-import type { DestinationStatus } from '@mailvault/shared';
+import { CopyOutlined, DeleteOutlined, EditOutlined, FolderOpenOutlined, PlusOutlined, SafetyCertificateOutlined, SyncOutlined } from '@ant-design/icons';
+import { isAdminRole, type DestinationStatus } from '@mailvault/shared';
 import { api } from '../api';
 import { useAuth } from '../auth';
 import { DestinationStatusTag, EmptyState, PageHeader } from '../components/ui';
+import { useConfirm } from '../components/confirm';
 import { CheckedAs, FolderPicker, type FolderOpReply } from '../components/FolderPicker';
 import { fmtBytes, fmtDateTime, fromNow } from '../format';
 
@@ -23,11 +24,25 @@ interface Destination {
 }
 
 export function DestinationsPage() {
-  const { can } = useAuth();
+  const { can, user } = useAuth();
   const { message } = App.useApp();
+  const confirm = useConfirm();
   const qc = useQueryClient();
+  // Editing and permanently deleting folders is for Admin / Super Admin only (the API enforces the same).
+  const admin = isAdminRole(user?.role);
+  const canEdit = admin && can('destinations', 'edit');
+  const canDelete = admin && can('destinations', 'delete');
   const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState<Destination | null>(null);
   const [form] = Form.useForm();
+  const basePathNow = Form.useWatch('basePath', form);
+
+  // The drawer's form mounts fresh on every open (destroyOnHidden), so initialValues below fill it.
+  const openDrawer = (d: Destination | null) => {
+    setEditing(d);
+    setTestResult(null);
+    setOpen(true);
+  };
   const [picking, setPicking] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<FolderOpReply | null>(null);
@@ -56,10 +71,11 @@ export function DestinationsPage() {
   const q = useQuery({ queryKey: ['destinations'], queryFn: () => api.get<Destination[]>('/api/destinations') });
 
   const create = useMutation({
-    mutationFn: (v: object) => api.post<Destination>('/api/destinations', v),
+    mutationFn: (v: object) =>
+      editing ? api.patch<Destination>(`/api/destinations/${editing.id}`, v) : api.post<Destination>('/api/destinations', v),
     onSuccess: (d) => {
       if (d.status === 'UNAVAILABLE') message.warning(`Saved, but the folder is not accessible: ${d.lastError}`);
-      else message.success('Destination folder added and verified');
+      else message.success(editing ? 'Destination folder updated' : 'Destination folder added and verified');
       setOpen(false);
       form.resetFields();
       setTestResult(null);
@@ -67,6 +83,27 @@ export function DestinationsPage() {
     },
     onError: (e: Error) => message.error(e.message),
   });
+
+  const remove = useMutation({
+    mutationFn: (id: string) => api.del(`/api/destinations/${id}`),
+    onSuccess: () => {
+      message.success('Destination folder deleted');
+      void qc.invalidateQueries({ queryKey: ['destinations'] });
+    },
+    onError: (e: Error) => message.error(e.message),
+  });
+
+  const askDelete = (d: Destination) =>
+    void confirm({
+      tone: 'danger',
+      icon: <DeleteOutlined />,
+      title: 'Permanently delete this destination folder?',
+      subject: `${d.name} · ${d.basePath}`,
+      description:
+        'The folder is removed from MailVault and cannot be restored. Files already saved in it stay on disk. This is recorded in the audit log.',
+      okText: 'Delete permanently',
+      onConfirm: () => remove.mutateAsync(d.id).catch(() => undefined),
+    });
 
   const check = useMutation({
     mutationFn: (id: string) => api.post<Destination>(`/api/destinations/${id}/check`),
@@ -85,7 +122,7 @@ export function DestinationsPage() {
         subtitle="Reusable folders that rules save attachments into. Checked automatically every 5 minutes."
         extra={
           can('destinations', 'create') && (
-            <Button type="primary" icon={<PlusOutlined />} onClick={() => setOpen(true)}>
+            <Button type="primary" icon={<PlusOutlined />} onClick={() => openDrawer(null)}>
               Add folder
             </Button>
           )
@@ -103,7 +140,7 @@ export function DestinationsPage() {
               <EmptyState
                 title="No destination folders yet"
                 description="Add a local folder (D:\...) or network share (\\server\share) where attachments will be saved."
-                action={can('destinations', 'create') && <Button type="primary" icon={<PlusOutlined />} onClick={() => setOpen(true)}>Add folder</Button>}
+                action={can('destinations', 'create') && <Button type="primary" icon={<PlusOutlined />} onClick={() => openDrawer(null)}>Add folder</Button>}
               />
             ),
           }}
@@ -131,29 +168,60 @@ export function DestinationsPage() {
             {
               title: '',
               align: 'right',
-              render: (_, d) =>
-                can('destinations', 'execute') && (
-                  <Button icon={<SyncOutlined />} loading={check.isPending && check.variables === d.id} onClick={() => check.mutate(d.id)}>
-                    Check now
-                  </Button>
-                ),
+              render: (_, d) => (
+                <Space size={6}>
+                  {can('destinations', 'execute') && (
+                    <Button icon={<SyncOutlined />} loading={check.isPending && check.variables === d.id} onClick={() => check.mutate(d.id)}>
+                      Check now
+                    </Button>
+                  )}
+                  {canEdit && (
+                    <Tooltip title="Edit">
+                      <Button icon={<EditOutlined />} aria-label={`Edit ${d.name}`} onClick={() => openDrawer(d)} />
+                    </Tooltip>
+                  )}
+                  {canDelete && (
+                    <Tooltip
+                      title={
+                        d._count.rules
+                          ? `Used by ${d._count.rules} rule${d._count.rules === 1 ? '' : 's'}. Move them to another folder first.`
+                          : 'Delete permanently'
+                      }
+                    >
+                      <Button
+                        danger
+                        icon={<DeleteOutlined />}
+                        aria-label={`Delete ${d.name}`}
+                        disabled={d._count.rules > 0}
+                        loading={remove.isPending && remove.variables === d.id}
+                        onClick={() => askDelete(d)}
+                      />
+                    </Tooltip>
+                  )}
+                </Space>
+              ),
             },
           ]}
         />
       </Card>
 
       <Drawer
-        title="Add destination folder"
+        title={editing ? `Edit destination folder · ${editing.name}` : 'Add destination folder'}
         width={520}
         open={open}
         onClose={() => setOpen(false)}
-        afterOpenChange={(o) => !o && setTestResult(null)}
+        afterOpenChange={(o) => {
+          if (!o) {
+            setTestResult(null);
+            setEditing(null);
+          }
+        }}
         destroyOnHidden
         extra={
           <Space>
             <Button onClick={() => setOpen(false)}>Cancel</Button>
             <Button type="primary" loading={create.isPending} onClick={() => form.submit()}>
-              Save & verify
+              {editing ? 'Save changes' : 'Save & verify'}
             </Button>
           </Space>
         }
@@ -169,11 +237,24 @@ export function DestinationsPage() {
             </>
           }
         />
+        {editing && editing._count.rules > 0 && basePathNow && basePathNow.trim() !== editing.basePath && (
+          <Alert
+            type="info"
+            showIcon
+            style={{ marginBottom: 20 }}
+            message={`${editing._count.rules} rule${editing._count.rules === 1 ? ' saves' : 's save'} into this folder`}
+            description="After saving, new files from those rules go to the new path. Files already saved stay where they are."
+          />
+        )}
         <Form
           form={form}
           layout="vertical"
           requiredMark="optional"
-          initialValues={{ createIfMissing: true, lowSpaceThresholdMb: 1024 }}
+          initialValues={
+            editing
+              ? { name: editing.name, basePath: editing.basePath, lowSpaceThresholdMb: editing.lowSpaceThresholdMb, createIfMissing: editing.createIfMissing }
+              : { createIfMissing: true, lowSpaceThresholdMb: 1024 }
+          }
           onFinish={(v) => create.mutate(v)}
           onValuesChange={(changed) => {
             if ('basePath' in changed || 'createIfMissing' in changed) setTestResult(null);
