@@ -91,7 +91,12 @@ npx tsx scripts/md-to-pdf.ts <file.md> [out.pdf]  # styled PDF of a doc via Edge
 - The Claude built-in browser pane cannot open localhost here; use `tests/e2e/screenshots.ts` for visual checks.
 - `.env` holds DB password, `JWT_SECRET`, `SECRET_ENC_KEY`, `DEV_ADMIN_PASSWORD`; never commit it or print secrets.
 - Windows services can't see mapped drives: destinations must be local paths or UNC.
-- Live site: http://mailvault.finwave.co (IIS + iisnode); worker = Task Scheduler task MailVault-Worker running as SYSTEM.
+- Live site: http://mailvault.finwave.co (IIS + iisnode); worker = Task Scheduler task MailVault-Worker running as
+  `FINWAVE-WEB\finwave` (stored password; since 2026-11-25, for UNC shares such as `\\192.168.2.111\aif-ifsc`).
+  The server is in a WORKGROUP: SYSTEM reaches other machines as anonymous, so shares need a real user account with Modify rights.
+  Reinstall/password change (admin PowerShell, in-process, not `powershell -File`, which turns the SecureString into text):
+  `Set-ExecutionPolicy -Scope Process Bypass -Force; .\scripts\install-service.ps1 -WorkerAccount "FINWAVE-WEB\finwave" -WorkerPassword (Read-Host -AsSecureString)`.
+  Running it without -WorkerAccount reverts to SYSTEM. If the Finwave password changes, the worker won't start until reinstalled.
   qpdf lives in `D:\Investoyard\.tools\qpdf` (next to pgsql); `.env` has `QPDF_PATH=D:/Investoyard/.tools/qpdf/bin/qpdf.exe`.
 - Shell pitfalls here: Git Bash heredocs/printf and `node -e` strings eat backslashes (`\b` became a backspace in .env):
   write Windows paths with forward slashes, and do multi-line source edits with the Edit/Write tools or a script file.
