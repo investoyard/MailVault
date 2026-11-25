@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { Button, Card, Col, Progress, Row, Segmented, Select, Skeleton, Table, Tooltip, Typography } from 'antd';
+import { Button, Card, Col, Row, Segmented, Select, Skeleton, Table, Tooltip, Typography } from 'antd';
 import {
   CheckCircleOutlined,
   ClockCircleOutlined,
@@ -157,19 +157,40 @@ export function DashboardPage() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                 {d.ruleStats.map((r) => {
                   const total = r.success + r.failed + r.skipped;
+                  // Each part opens Download History filtered to this rule (and that outcome).
+                  const open = (status?: string) => navigate(`/history?ruleId=${encodeURIComponent(r.ruleId)}${status ? `&status=${status}` : ''}`);
+                  const part = (n: number, label: string, status: string, color?: string) => (
+                    <Tooltip title={`Show the ${label} downloads of this rule`}>
+                      <a className="mv-rule-stat" style={color ? { color } : undefined} onClick={() => open(status)}>
+                        {fmtNumber(n)} {label}
+                      </a>
+                    </Tooltip>
+                  );
                   return (
                     <div key={r.ruleId}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                        <Typography.Text strong ellipsis style={{ maxWidth: '70%' }}>
-                          {r.ruleName}
-                        </Typography.Text>
-                        <span className="mv-muted" style={{ fontVariantNumeric: 'tabular-nums' }}>
-                          {fmtNumber(r.success)}
-                          {r.failed > 0 && <span style={{ color: palette.error }}> · {r.failed} failed</span>}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginBottom: 4 }}>
+                        <Tooltip title="Show all downloads of this rule">
+                          <Typography.Link strong ellipsis style={{ maxWidth: '55%', color: 'inherit' }} onClick={() => open()}>
+                            {r.ruleName}
+                          </Typography.Link>
+                        </Tooltip>
+                        <span className="mv-muted" style={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', fontSize: 13 }}>
+                          {part(r.success, 'saved', 'SUCCESS')}
+                          {r.failed > 0 && <> · {part(r.failed, 'failed', 'FAILED', palette.error)}</>}
+                          {r.skipped > 0 && <> · {part(r.skipped, 'skipped', 'SKIPPED')}</>}
                         </span>
                       </div>
                       <Tooltip title={`${r.success} successful · ${r.failed} failed · ${r.skipped} skipped`}>
-                        <Progress percent={(total / maxRule) * 100} success={{ percent: (r.success / maxRule) * 100, strokeColor: palette.primary }} strokeColor={palette.error} showInfo={false} size="small" />
+                        {/* Saved (primary) · failed (red) · skipped (grey), scaled to the busiest rule; click = all of this rule */}
+                        <div className="mv-rule-bar" onClick={() => open()} role="link" aria-label={`Show all downloads of ${r.ruleName}`}>
+                          {total > 0 && (
+                            <div style={{ display: 'flex', width: `${(total / maxRule) * 100}%`, height: '100%' }}>
+                              <span style={{ flex: r.success, background: palette.primary }} />
+                              <span style={{ flex: r.failed, background: palette.error }} />
+                              <span style={{ flex: r.skipped, background: '#94A3B8' }} />
+                            </div>
+                          )}
+                        </div>
                       </Tooltip>
                     </div>
                   );

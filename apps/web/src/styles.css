@@ -332,6 +332,22 @@ body {
   color: var(--mv-muted);
 }
 
+/* Dashboard "Downloads by rule": counts that open the filtered history */
+a.mv-rule-stat {
+  color: inherit;
+}
+.mv-rule-bar {
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.06);
+  overflow: hidden;
+  cursor: pointer;
+}
+a.mv-rule-stat:hover {
+  color: var(--ant-color-primary, #4338ca);
+  text-decoration: underline;
+}
+
 .mv-row-muted td {
   opacity: 0.55;
 }
