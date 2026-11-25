@@ -96,7 +96,8 @@ npx tsx scripts/md-to-pdf.ts <file.md> [out.pdf]  # styled PDF of a doc via Edge
   The server is in a WORKGROUP: SYSTEM reaches other machines as anonymous, so shares need a real user account with Modify rights.
   Reinstall/password change (admin PowerShell, in-process, not `powershell -File`, which turns the SecureString into text):
   `Set-ExecutionPolicy -Scope Process Bypass -Force; .\scripts\install-service.ps1 -WorkerAccount "FINWAVE-WEB\finwave" -WorkerPassword (Read-Host -AsSecureString)`.
-  Running it without -WorkerAccount reverts to SYSTEM. If the Finwave password changes, the worker won't start until reinstalled.
+  Running it without -WorkerAccount reverts to SYSTEM. If the Finwave password changes, the worker won't start until the task
+  gets the new one: double-click `scripts\update-worker-password.cmd` (elevates, asks the password, Set-ScheduledTask, restarts the worker).
   qpdf lives in `D:\Investoyard\.tools\qpdf` (next to pgsql); `.env` has `QPDF_PATH=D:/Investoyard/.tools/qpdf/bin/qpdf.exe`.
 - Shell pitfalls here: Git Bash heredocs/printf and `node -e` strings eat backslashes (`\b` became a backspace in .env):
   write Windows paths with forward slashes, and do multi-line source edits with the Edit/Write tools or a script file.

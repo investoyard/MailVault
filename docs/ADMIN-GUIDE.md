@@ -117,6 +117,7 @@ processing service stopped, certificate expiring, historical job finished, and t
 | Restart | **System Status → Restart worker** (Super Admin; e.g. after editing `.env`). On the server: `Stop-ScheduledTask MailVault-Worker; Start-ScheduledTask MailVault-Worker` |
 | Logs | `logs\api.log`, `logs\worker.log`; in the app: Audit & Logs → Processing logs |
 | Update MailVault | `git pull` → `npm install` → `npm run db:deploy` → run `scripts\install-service.ps1` again |
+| Worker account's Windows password changed | Double-click `scripts\update-worker-password.cmd`, allow admin rights, type the new password; it restarts the worker |
 | Certificate renewal | Alert 30 days before; `docs/ENTRA-SETUP.md` steps 1–2 |
 
 ## 10. Troubleshooting
