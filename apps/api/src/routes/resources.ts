@@ -449,11 +449,22 @@ export async function resourceRoutes(app: FastifyInstance) {
     const { stat } = await import('node:fs/promises');
     const base = resolvePath(d.match.rule.destination.basePath).toLowerCase() + '\\';
     const full = resolvePath(d.destinationPath);
-    if (!full.toLowerCase().startsWith(base)) return reply.code(403).send({ error: 'File is outside its destination folder' });
+    const inCurrentFolder = full.toLowerCase().startsWith(base);
     try {
       await stat(full);
     } catch {
-      return reply.code(404).send({ error: 'The file is no longer in the destination folder (moved or deleted)' });
+      return reply.code(404).send({
+        error: inCurrentFolder
+          ? 'The file is no longer in the destination folder (moved or deleted)'
+          : `The file was saved to ${full} (the rule's earlier folder) and is no longer there (moved or deleted)`,
+      });
+    }
+    // Saved before the rule moved to another folder: only hand it out if it is still exactly the file MailVault wrote.
+    if (!inCurrentFolder) {
+      const { sha256File } = await import('@mailvault/core/node');
+      if (!d.sha256 || (await sha256File(full)) !== d.sha256) {
+        return reply.code(403).send({ error: `The file at ${full} has been changed since MailVault saved it, so it cannot be downloaded from here` });
+      }
     }
     await audit(req.user.id, 'FILE_DOWNLOADED_BY_USER', 'AttachmentDownload', id, null, { path: full }, req.ip);
     const name = basename(full);

@@ -49,9 +49,13 @@ export function fileExtension(name: string): string {
   return dot > 0 && dot < name.length - 1 ? name.slice(dot + 1).toLowerCase() : '';
 }
 
-/** "invoice.pdf" + 2 -> "invoice (2).pdf" */
-export function numberedFileName(name: string, n: number): string {
+/** How extra copies are numbered: "invoice (1).pdf" (PARENS) or "invoice 2.pdf" (SPACE, the original counts as 1). */
+export type CopyNumbering = 'PARENS' | 'SPACE';
+
+/** n-th extra copy: "invoice.pdf" + 1 -> "invoice (1).pdf", or with SPACE "invoice 2.pdf". */
+export function numberedFileName(name: string, n: number, style: CopyNumbering = 'PARENS'): string {
+  const suffix = style === 'SPACE' ? ` ${n + 1}` : ` (${n})`;
   const dot = name.lastIndexOf('.');
-  if (dot <= 0) return `${name} (${n})`;
-  return `${name.slice(0, dot)} (${n})${name.slice(dot)}`;
+  if (dot <= 0) return `${name}${suffix}`;
+  return `${name.slice(0, dot)}${suffix}${name.slice(dot)}`;
 }

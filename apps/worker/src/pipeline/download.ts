@@ -4,7 +4,7 @@ import { join, win32 } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { Transform, type Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import { acceptInnerFile, buildDestinationFolder, buildFileName, containerKindOf, type AttachmentInfo, type ContainerKind } from '@mailvault/core';
+import { acceptInnerFile, buildDestinationFolder, buildFileName, containerKindOf, usesEmailBody, type AttachmentInfo, type ContainerKind, type EmailContent } from '@mailvault/core';
 import {
   DEFAULT_LIMITS,
   ExtractError,
@@ -147,6 +147,13 @@ async function downloadOne(id: string, ctx: PipelineContext, settings: PipelineS
     }
 
     const cfg = downloadConfigSchema.parse(rule.download);
+    const isEmailPdf = row.attachment.kind === 'EMAIL_BODY';
+    const ref = { mailbox: message.mailbox.email, messageId: message.providerMessageId };
+    const provider = ctx.providerFor(message.mailbox);
+    // The email body is fetched (GET only, never stored) for the email PDF, or when a name uses {BodyDate:…}.
+    const namePattern = isEmailPdf ? cfg.emailPdfNamePattern : cfg.fileNamePattern;
+    const content: EmailContent | undefined =
+      isEmailPdf || usesEmailBody(namePattern) || usesEmailBody(cfg.subfolderPattern) ? await provider.getEmailContent(ref) : undefined;
     const pctx = {
       receivedAt: message.receivedAt,
       timeZone: settings.timeZone,
@@ -155,8 +162,8 @@ async function downloadOne(id: string, ctx: PipelineContext, settings: PipelineS
       subject: message.subject,
       ruleName: rule.name,
       mailbox: message.mailbox.email,
+      emailBody: content?.body.content,
     };
-    const isEmailPdf = row.attachment.kind === 'EMAIL_BODY';
     let folder = buildDestinationFolder(dest.basePath, cfg, pctx);
     const original = row.finalFileName ?? row.attachment.name;
     const savedAt = ctx.now();
@@ -169,9 +176,13 @@ async function downloadOne(id: string, ctx: PipelineContext, settings: PipelineS
       fileName = win32.basename(row.destinationPath);
       policy = 'REPLACE';
     }
-    const saveOpts = { folder, policy, fileDate: cfg.setFileDateToReceived ? message.receivedAt : undefined, maxBytes: settings.maxSizeMb * 1024 * 1024 };
-    const ref = { mailbox: message.mailbox.email, messageId: message.providerMessageId };
-    const provider = ctx.providerFor(message.mailbox);
+    const saveOpts = {
+      folder,
+      policy,
+      numbering: cfg.copyNumbering,
+      fileDate: cfg.setFileDateToReceived ? message.receivedAt : undefined,
+      maxBytes: settings.maxSizeMb * 1024 * 1024,
+    };
     const filter = attachmentFilterSchema.parse(rule.attachments);
     const unlock = cfg.unlockProtected ? { passwords: rulePasswords(rule.filePasswords), qpdf: qpdfPath() } : null;
     const makeWork = async () => {
@@ -187,9 +198,8 @@ async function downloadOne(id: string, ctx: PipelineContext, settings: PipelineS
     if (isEmailPdf) {
       // The email itself → PDF (body fetched now, never stored).
       const dir = await makeWork();
-      const content = await provider.getEmailContent(ref);
       const pdf = join(dir, 'email.pdf');
-      await renderEmailPdf(content, pdf, { timeZone: settings.timeZone, allowRemoteImages: cfg.emailPdfRemoteImages, footer: `${message.mailbox.email} · ${content.subject || '(no subject)'}` });
+      await renderEmailPdf(content!, pdf, { timeZone: settings.timeZone, allowRemoteImages: cfg.emailPdfRemoteImages, footer: `${message.mailbox.email} · ${content!.subject || '(no subject)'}` });
       source = createReadStream(pdf);
     } else {
       source = await provider.openAttachment(ref, row.attachment.providerAttachmentId);
@@ -216,6 +226,7 @@ async function downloadOne(id: string, ctx: PipelineContext, settings: PipelineS
     }
 
     const result = await saveAttachment({ source, fileName, ...saveOpts });
+    if (result.status === 'SKIPPED' && result.reason.startsWith('Identical file')) result.reason = await whoSavedIt(result.path, id);
 
     await prisma.$transaction([
       prisma.attachmentDownload.update({
@@ -287,6 +298,20 @@ async function downloadOne(id: string, ctx: PipelineContext, settings: PipelineS
   } finally {
     if (work) await rm(work, { recursive: true, force: true }).catch(() => undefined);
   }
+}
+
+/** Smart skip: say whether MailVault saved that file before (and when) or it was already there (e.g. saved by hand). */
+async function whoSavedIt(path: string, selfId: string): Promise<string> {
+  const earlier = await prisma.attachmentDownload.findFirst({
+    where: { id: { not: selfId }, status: 'SUCCESS', destinationPath: { equals: path, mode: 'insensitive' } },
+    orderBy: { downloadedAt: 'asc' },
+    select: { downloadedAt: true, createdAt: true },
+  });
+  if (earlier) {
+    const at = (earlier.downloadedAt ?? earlier.createdAt).toLocaleString('en-IN', { timeZone: process.env.BUSINESS_TIMEZONE ?? 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short' });
+    return `Identical file already saved by MailVault on ${at} (Smart duplicate policy)`;
+  }
+  return 'Identical file already in the folder, saved earlier outside MailVault, e.g. by hand (Smart duplicate policy)';
 }
 
 /** Saved passwords of a rule (decrypted only here, in the worker, when a file needs them). */

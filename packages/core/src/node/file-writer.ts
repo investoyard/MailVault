@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { Transform, type Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import type { DuplicatePolicy } from '@mailvault/shared';
-import { numberedFileName } from '../filename.js';
+import { numberedFileName, type CopyNumbering } from '../filename.js';
 import { assertRootExists } from './fs-root.js';
 
 export interface SaveOptions {
@@ -16,6 +16,8 @@ export interface SaveOptions {
   policy: DuplicatePolicy;
   fileDate?: Date; // set modified time (e.g. email received date)
   maxBytes?: number;
+  /** Names of extra copies (Rename / Smart): "name (1).pdf" (default) or "name 2.pdf". */
+  numbering?: CopyNumbering;
 }
 
 export type SaveResult =
@@ -121,7 +123,7 @@ export async function saveAttachment(o: SaveOptions): Promise<SaveResult> {
           if (n > 1 || candidate !== o.fileName) {
             if (await placeExclusive(tmp, path)) return saved(candidate);
           }
-          candidate = numberedFileName(o.fileName, n);
+          candidate = numberedFileName(o.fileName, n, o.numbering);
         }
         throw new Error('Too many files with the same name (999)');
       }

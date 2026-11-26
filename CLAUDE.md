@@ -79,6 +79,10 @@ npx tsx scripts/md-to-pdf.ts <file.md> [out.pdf]  # styled PDF of a doc via Edge
   trailing `{Ext}` dropped). Date tokens: `{Date:<fmt>}` = received date, `{Today:<fmt>}` = save date (`ctx.now`),
   fmt parts `yyyy yy MMMM MMM MM M dd d HH mm ss` + `- _ . space ,`; `{FY}` (2026-27) / `{FYFull}` (2026-2027) / `{FYQuarter}` = Indian April–March year.
   New tokens go in `PATTERN_TOKENS` + `PATTERN_TOKEN_HELP`; `unknownTokens()` drives the editor's validation.
+  `{BodyDate:<label>[|fmt]}` = date written in the email next to/below that label (core/src/body-fields.ts; default dd.MM.yyyy,
+  received date if not found); download.ts fetches the body only when a pattern uses it (`usesEmailBody`).
+  Extra copies: rule `download.copyNumbering` PARENS `name (1).pdf` / SPACE `name 2.pdf`.
+  Email PDFs: wide emails print landscape and scale down to fit (`pageLayout` in worker pipeline/email-pdf.ts).
 - Dates for folders/"today" use the business time zone (`BUSINESS_TIMEZONE`, default Asia/Kolkata).
 - API: every route has a `requirePermission(module, action)` guard; validate input with zod; write `audit()`.
 - UI: light theme, Ant Design components, `PageHeader` + `mv-card` cards, friendly empty states, plain-English labels.

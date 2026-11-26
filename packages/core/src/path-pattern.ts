@@ -1,3 +1,4 @@
+import { findBodyDate } from './body-fields.js';
 import { sanitizeFileName, sanitizeFolderName } from './filename.js';
 
 export interface PatternContext {
@@ -11,6 +12,8 @@ export interface PatternContext {
   originalName?: string;
   /** "Today" for {Today…} tokens: when the file is saved. Defaults to the current time. */
   now?: Date;
+  /** Email body (HTML or text) for {BodyDate:<label>}; only fetched when a pattern uses it. */
+  emailBody?: string;
 }
 
 function zonedParts(date: Date, timeZone: string) {
@@ -96,6 +99,19 @@ export function formatDate(date: Date, format: string, timeZone: string): string
   return format.replace(DATE_PART, (p) => parts[p] ?? p);
 }
 
+/** Default format of {BodyDate:<label>} when none is given after "|". */
+export const BODY_DATE_DEFAULT_FORMAT = 'dd.MM.yyyy';
+
+/** True when the pattern needs the email body ({BodyDate:…}), so the worker fetches it before naming. */
+export const usesEmailBody = (pattern?: string) => !!pattern && /{BodyDate:/.test(pattern);
+
+/** "EXECUTION DATE|dd.MM.yyyy" → label + format; undefined when invalid. */
+function parseBodyDateArg(arg: string): { label: string; format: string } | undefined {
+  const [label = '', format = BODY_DATE_DEFAULT_FORMAT, ...rest] = arg.split('|');
+  if (rest.length || !label.trim() || !DATE_FORMAT.test(format)) return undefined;
+  return { label: label.trim(), format };
+}
+
 const TOKEN = /\{(\w+)(?::([^{}]*))?\}/g;
 
 /** Tokens in a pattern that MailVault does not know (typos), for a warning in the rule editor. */
@@ -104,7 +120,12 @@ export function unknownTokens(pattern: string): string[] {
   const bad: string[] = [];
   for (const m of pattern.matchAll(TOKEN)) {
     const [whole, key, fmt] = m;
-    const ok = fmt !== undefined ? (key === 'Date' || key === 'Today') && DATE_FORMAT.test(fmt) : known.has(key!);
+    const ok =
+      fmt !== undefined
+        ? key === 'BodyDate'
+          ? !!parseBodyDateArg(fmt)
+          : (key === 'Date' || key === 'Today') && DATE_FORMAT.test(fmt)
+        : known.has(key!);
     if (!ok) bad.push(whole);
   }
   return bad;
@@ -151,6 +172,13 @@ export function renderPattern(pattern: string, ctx: PatternContext): string {
     if (fmt !== undefined) {
       if ((key === 'Date' || key === 'Today') && DATE_FORMAT.test(fmt)) {
         value = formatDate(key === 'Date' ? ctx.receivedAt : (ctx.now ?? new Date()), fmt, ctx.timeZone);
+      } else if (key === 'BodyDate') {
+        // A date written in the email (e.g. the EXECUTION DATE column); the received date when it is not found.
+        const arg = parseBodyDateArg(fmt);
+        if (arg) {
+          const found = ctx.emailBody ? findBodyDate(ctx.emailBody, arg.label) : undefined;
+          value = found ? formatDate(found, arg.format, 'UTC') : formatDate(ctx.receivedAt, arg.format, ctx.timeZone);
+        }
       }
     } else if (key in values) value = values[key];
     // Slashes inside a value are content (e.g. "12/2026"), not folders: replace them before sanitizing.

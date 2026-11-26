@@ -54,6 +54,21 @@ export async function closeEmailPdfBrowser() {
   if (b) await b.then((x) => x.close()).catch(() => undefined);
 }
 
+// Printable width in CSS pixels (96 per inch) with the 12 mm side margins below.
+const PX_PER_MM = 96 / 25.4;
+const PORTRAIT_PX = Math.floor((210 - 24) * PX_PER_MM); // 703
+const LANDSCAPE_PX = Math.floor((297 - 24) * PX_PER_MM); // 1031
+
+/**
+ * Wide emails (e.g. bank tables with fixed 1300 px widths) would be cut off at the right edge of A4.
+ * Too wide for portrait: landscape; still too wide: shrink to fit (never below 40%).
+ */
+export function pageLayout(contentWidth: number): { landscape: boolean; scale: number } {
+  if (contentWidth <= PORTRAIT_PX + 2) return { landscape: false, scale: 1 };
+  if (contentWidth <= LANDSCAPE_PX + 2) return { landscape: true, scale: 1 };
+  return { landscape: true, scale: Math.max(0.4, Math.floor((LANDSCAPE_PX / contentWidth) * 100) / 100) };
+}
+
 /** Explains a renderer failure in words an admin can act on. */
 export class EmailPdfError extends Error {
   code = 'EMAIL_PDF_FAILED';
@@ -69,7 +84,8 @@ export async function renderEmailPdf(email: EmailContent, outPath: string, o: { 
     } catch (err) {
       throw new EmailPdfError(`Microsoft Edge could not be started to create the email PDF: ${(err as Error).message.split('\n')[0]}`);
     }
-    const context = await b.newContext({ javaScriptEnabled: false, offline: !o.allowRemoteImages });
+    // Viewport = printable width of A4 portrait, so the email is laid out as it will be printed.
+    const context = await b.newContext({ javaScriptEnabled: false, offline: !o.allowRemoteImages, viewport: { width: PORTRAIT_PX, height: 1000 } });
     try {
       await context.route('**/*', (route) => {
         const req = route.request();
@@ -84,9 +100,13 @@ export async function renderEmailPdf(email: EmailContent, outPath: string, o: { 
         if (!/Timeout/i.test((err as Error).message)) throw err;
         log.warn({ outPath }, 'email PDF: page load timed out, printing anyway');
       }
+      await page.emulateMedia({ media: 'print' });
+      const contentWidth = Number(await page.evaluate('document.documentElement.scrollWidth')) || PORTRAIT_PX;
+      const layout = pageLayout(contentWidth);
       await page.pdf({
         path: outPath,
         format: 'A4',
+        ...layout,
         printBackground: true,
         margin: { top: '14mm', bottom: '16mm', left: '12mm', right: '12mm' },
         displayHeaderFooter: true,

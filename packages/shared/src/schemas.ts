@@ -49,6 +49,8 @@ export const downloadConfigSchema = z.object({
   senderSubfolders: z.boolean().default(false),
   fileNamePattern: z.string().trim().default('{OriginalName}'),
   duplicatePolicy: z.enum(DUPLICATE_POLICIES).default('SMART'),
+  /** Extra copies kept by Rename / Smart: "name (1).pdf" or "name 2.pdf". */
+  copyNumbering: z.enum(['PARENS', 'SPACE']).default('PARENS'),
   autoDownload: z.boolean().default(true),
   setFileDateToReceived: z.boolean().default(true),
   /** Remove passwords from PDF and ZIP files before saving (passwords live encrypted on the rule, not here). */

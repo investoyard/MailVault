@@ -82,6 +82,8 @@ export function buildEmailHtml(email: EmailContent, o: EmailHtmlOptions): string
   .mv-email-body { font-family: 'Segoe UI', Calibri, Arial, sans-serif; font-size: 10.5pt; color: #111; overflow-wrap: anywhere; }
   .mv-email-body img { max-width: 100%; height: auto; }
   .mv-email-body table { max-width: 100% !important; }
+  /* Table cells wrap between words only; a table too wide for the page makes the PDF landscape / smaller instead of stacking letters. */
+  .mv-email-body td, .mv-email-body th { overflow-wrap: normal; word-break: normal; }
   .mv-text { white-space: pre-wrap; font-family: Consolas, 'Cascadia Mono', monospace; font-size: 9.5pt; }
 </style>
 <style>${styles.replace(/<\/style/gi, '')}</style>

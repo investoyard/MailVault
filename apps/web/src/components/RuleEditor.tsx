@@ -70,6 +70,7 @@ const DEFAULTS: FormValues = {
     senderSubfolders: false,
     fileNamePattern: '{OriginalName}',
     duplicatePolicy: 'SMART',
+    copyNumbering: 'PARENS',
     autoDownload: true,
     setFileDateToReceived: true,
     unlockProtected: false,
@@ -508,6 +509,20 @@ export function RuleEditor({ rule, onDone }: { rule: RuleRecord | null; onDone: 
                   </Form.Item>
                 </Col>
                 <Col span={12}>
+                  <Form.Item
+                    name={['download', 'copyNumbering']}
+                    label="Name of the extra copy"
+                    tooltip="Used when both files are kept (Smart with a different file, or Always keep both)."
+                  >
+                    <Select
+                      options={[
+                        { value: 'PARENS', label: 'invoice (1).pdf, invoice (2).pdf …' },
+                        { value: 'SPACE', label: 'invoice 2.pdf, invoice 3.pdf …' },
+                      ]}
+                    />
+                  </Form.Item>
+                </Col>
+                <Col span={12}>
                   <Form.Item name={['download', 'autoDownload']} label="Download automatically" valuePropName="checked" tooltip="Off: matches wait in History for someone to download them.">
                     <Switch />
                   </Form.Item>
@@ -787,6 +802,13 @@ function TokenBar({ onPick, forFileName }: { onPick: (t: string) => void; forFil
         </TokenGroup>
       )}
       <TokenGroup label="Email">{emailTokens.map((t) => token(t, PATTERN_TOKEN_HELP[t]))}</TokenGroup>
+      <TokenGroup label="Date in the email">
+        {token('{BodyDate:EXECUTION DATE}', 'A date written in the email next to this label, e.g. the EXECUTION DATE column of a table: 25.11.2026. Replace EXECUTION DATE with the label used in your emails. If it is not found, the received date is used')}
+      </TokenGroup>
+      <div className="mv-muted" style={{ fontSize: 12 }}>
+        Date written in the email: <span className="mv-mono">{'{BodyDate:LABEL}'}</span> (format dd.MM.yyyy) or{' '}
+        <span className="mv-mono">{'{BodyDate:LABEL|dd-MM-yyyy}'}</span>; the preview shows the received date.
+      </div>
       <div className="mv-muted" style={{ fontSize: 12 }}>
         Your own date format: <span className="mv-mono">{'{Date:dd-MM-yyyy}'}</span> (email date) or{' '}
         <span className="mv-mono">{'{Today:dd-MM-yyyy}'}</span> (save date), using {DATE_FORMAT_PARTS_HELP} and - _ . space , as separators.

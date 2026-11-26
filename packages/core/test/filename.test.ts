@@ -38,6 +38,8 @@ describe('helpers', () => {
   it('numberedFileName', () => {
     expect(numberedFileName('invoice.pdf', 2)).toBe('invoice (2).pdf');
     expect(numberedFileName('README', 1)).toBe('README (1)');
+    expect(numberedFileName('26.11.2026.pdf', 1, 'SPACE')).toBe('26.11.2026 2.pdf');
+    expect(numberedFileName('26.11.2026.pdf', 2, 'SPACE')).toBe('26.11.2026 3.pdf');
   });
 });
 
