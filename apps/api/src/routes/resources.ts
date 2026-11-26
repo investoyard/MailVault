@@ -245,7 +245,8 @@ export async function resourceRoutes(app: FastifyInstance) {
     const scope = mailboxScope(req);
     const rules = await prisma.rule.findMany({
       where: scope ? { mailboxId: { in: scope } } : {},
-      orderBy: [{ mailbox: { email: 'asc' } }, { priority: 'asc' }],
+      // Same order the worker evaluates rules in (priority, then oldest first), so the list's # is the run order.
+      orderBy: [{ mailbox: { email: 'asc' } }, { priority: 'asc' }, { createdAt: 'asc' }],
       omit: { filePasswords: true },
       include: {
         mailbox: { select: { email: true } },

@@ -60,6 +60,8 @@ export function RulesPage() {
   });
 
   const mailboxes = useMemo(() => [...new Set((q.data ?? []).map((r) => r.mailbox.email))], [q.data]);
+  // Serial number in run order (the API sorts by mailbox, priority, then oldest first), kept while searching/filtering.
+  const seq = useMemo(() => new Map((q.data ?? []).map((r, i) => [r.id, i + 1])), [q.data]);
   const rows = (q.data ?? []).filter(
     (r) => (!mailbox || r.mailbox.email === mailbox) && (!search || `${r.name} ${r.description ?? ''}`.toLowerCase().includes(search.toLowerCase())),
   );
@@ -86,16 +88,17 @@ export function RulesPage() {
       <Card className="mv-card" styles={{ body: { padding: 0 } }}>
         <Table
           rowKey="id"
+          tableLayout="fixed"
           loading={q.isLoading}
           dataSource={rows}
           pagination={rows.length > 20 ? { pageSize: 20 } : false}
           locale={{ emptyText: <EmptyState title="No download rules yet" description="Rules match emails by sender, subject and attachment type, then save files to a destination folder." /> }}
           columns={[
-            { title: '#', dataIndex: 'priority', width: 64, render: (p: number) => <Tag style={{ fontVariantNumeric: 'tabular-nums' }}>{p}</Tag> },
+            { title: '#', width: 56, render: (_, r) => <span className="mv-muted" style={{ fontVariantNumeric: 'tabular-nums' }}>{seq.get(r.id)}</span> },
             {
               title: 'Rule',
               render: (_, r) => (
-                <div style={{ maxWidth: 'min(440px, 26vw)', minWidth: 200 }}>
+                <div style={{ minWidth: 0 }}>
                   <Space size={6} wrap>
                     <span style={{ fontWeight: 600 }}>{r.name}</span>
                     {r.simulationMode && <Tag color="purple" icon={<ExperimentOutlined />}>Simulation</Tag>}
@@ -112,24 +115,35 @@ export function RulesPage() {
               ),
             },
             {
+              title: (
+                <Tooltip title="Lower numbers run first. Rules with the same priority run oldest first.">
+                  <span>Priority</span>
+                </Tooltip>
+              ),
+              width: 90,
+              align: 'center',
+              responsive: ['lg'],
+              render: (_, r) => <Tag style={{ marginInlineEnd: 0, fontVariantNumeric: 'tabular-nums' }}>{r.priority}</Tag>,
+            },
+            {
               title: 'Destination',
               responsive: ['md'],
-              width: 220,
+              width: '30%',
               render: (_, r) => (
-                <div style={{ maxWidth: 200 }}>
+                <div style={{ minWidth: 0 }}>
                   <Typography.Text ellipsis={{ tooltip: r.destination.basePath }} style={{ display: 'block', fontWeight: 500 }}>
                     {r.destination.name}
                   </Typography.Text>
                   <DestinationStatusTag status={r.destination.status} />
                   {r.download.subfolderPattern && (
-                    <Typography.Text className="mv-mono mv-muted" ellipsis={{ tooltip: r.download.subfolderPattern }} style={{ display: 'block', maxWidth: 200 }}>
+                    <Typography.Text className="mv-mono mv-muted" ellipsis={{ tooltip: r.download.subfolderPattern }} style={{ display: 'block' }}>
                       …\{r.download.subfolderPattern}
                     </Typography.Text>
                   )}
                 </div>
               ),
             },
-            { title: 'Matches', align: 'right', width: 90, render: (_, r) => fmtNumber(r._count.matches) },
+            { title: 'Matches', align: 'right', width: 104, render: (_, r) => fmtNumber(r._count.matches) },
             { title: 'Version', align: 'center', width: 80, responsive: ['xxl'], render: (_, r) => <span className="mv-muted">v{r.currentVersion}</span> },
             {
               title: 'Enabled',
